@@ -1,0 +1,1 @@
+"""VERONIKA AI - App package."""

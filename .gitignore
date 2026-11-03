@@ -1,0 +1,37 @@
+# Secrets & Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.spec
+.venv/
+venv/
+ENV/
+
+# Database & Runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.log
+screenshots/
+cache/
+
+# IDE & Tool configurations
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# Test & Coverage artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*

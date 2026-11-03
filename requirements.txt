@@ -1,0 +1,40 @@
+# VERONIKA AI Desktop - Dependencies
+# Core UI
+PySide6>=6.8.0,<6.10.0
+
+# AI Providers
+openai>=1.12.0,<4.0.0
+google-generativeai>=0.5.0,<1.0.0
+
+# Phone Sync Server
+fastapi>=0.110.0,<1.0.0
+uvicorn>=0.29.0,<1.0.0
+
+# Voice / Speech
+SpeechRecognition>=3.10.0,<4.0.0
+PyAudio>=0.2.14,<0.3.0
+pyttsx3>=2.90,<3.0.0
+edge-tts>=6.1.0,<8.0.0
+pydub>=0.25.1,<1.0.0
+
+# Wake Word (optional)
+pvporcupine>=3.0.0,<4.0.0
+
+# Screen capture
+Pillow>=10.0.0,<14.0.0
+mss>=9.0.0,<11.0.0
+
+# Database
+# SQLite is built-in to Python
+
+# Security / Config
+python-dotenv>=1.0.0,<2.0.0
+keyring>=25.0.0,<26.0.0
+
+# Packaging
+pyinstaller>=6.0.0,<7.0.0
+
+# Testing
+pytest>=8.0.0,<9.0.0
+pytest-asyncio>=0.23.0,<1.0.0
+pytest-qt>=4.3.0,<5.0.0

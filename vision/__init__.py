@@ -1,0 +1,1 @@
+"""VERONIKA AI - Vision package."""

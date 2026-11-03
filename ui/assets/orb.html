@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VERONIKA Orb</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:#000; overflow:hidden;
+               font-family:"Courier New", monospace; }
+  #orb-root { position:fixed; inset:0; }
+  #orb-root canvas { display:block; }
+  .overlay-vignette {
+    position:fixed; inset:0; pointer-events:none; z-index:9;
+    background:radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.7) 100%);
+  }
+  .overlay-scanlines {
+    position:fixed; inset:0; pointer-events:none; z-index:11; opacity:.28;
+    background:repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0,0,0,.15) 2px 4px);
+  }
+  .hud { position:fixed; inset:0; pointer-events:none; z-index:20; color:#00d2ff; }
+  .hud-title {
+    position:absolute; top:18px; left:22px; font-size:13px;
+    letter-spacing:.35em; opacity:.75;
+  }
+  .hud-title::after {
+    content:""; display:block; width:120px; height:1px; margin-top:6px;
+    background:linear-gradient(to right, currentColor, transparent);
+  }
+  .hud-state {
+    position:absolute; bottom:22px; left:22px; font-size:11px; opacity:.6;
+  }
+  .hud-mode {
+    position:absolute; top:18px; right:22px; font-size:11px;
+    letter-spacing:.2em; opacity:.6;
+  }
+  .hud-status {
+    position:absolute; bottom:22px; right:22px; font-size:10px; opacity:.45;
+  }
+  :root { --orb-color:#00d2ff; }
+
+  /* ── Gesture HUD ─────────────────────────────────────────── */
+  .hud-gesture {
+    position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+    text-align:center; color:var(--orb-color); pointer-events:none;
+  }
+  .hud-gesture .g-label {
+    display:block; font-size:20px; letter-spacing:.22em; opacity:.9;
+    text-shadow:0 0 14px var(--orb-color);
+  }
+  .hud-gesture .g-sub {
+    display:block; margin-top:4px; font-size:9px; letter-spacing:.14em; opacity:.5;
+  }
+  .hud-ring {
+    position:fixed; top:50%; left:50%; width:360px; height:360px;
+    margin:-180px 0 0 -180px; border:1px solid var(--orb-color); border-radius:50%;
+    z-index:19; pointer-events:none; opacity:0; transform:scale(.9);
+    transition:opacity .25s ease, transform .12s linear;
+  }
+  .hud-ring.on { opacity:.42; }
+  .gesture-cam {
+    position:fixed; right:16px; bottom:16px; width:200px; height:150px;
+    border:1px solid var(--orb-color); border-radius:10px; overflow:hidden;
+    z-index:21; opacity:0; transition:opacity .3s; pointer-events:none;
+    box-shadow:0 0 24px -8px var(--orb-color);
+  }
+  .gesture-cam.on { opacity:.92; }
+  .gesture-cam video, .gesture-cam canvas {
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    transform:scaleX(-1);
+  }
+  .gesture-cam canvas { z-index:2; }
+  #gesture-toggle {
+    position:fixed; right:16px; bottom:176px; z-index:22;
+    background:rgba(10,14,20,.72); color:var(--orb-color);
+    border:1px solid var(--orb-color); border-radius:8px;
+    padding:6px 12px; font-family:inherit; font-size:11px; letter-spacing:.12em;
+    cursor:pointer; pointer-events:auto; transition:background .2s;
+  }
+  #gesture-toggle:hover { background:rgba(10,14,20,.95); }
+</style>
+</head>
+<body>
+<div id="orb-root"></div>
+<div class="overlay-vignette"></div>
+<div class="overlay-scanlines"></div>
+<div class="hud">
+  <div class="hud-title" id="hud-title">VERONIKA</div>
+  <div class="hud-state" id="hud-state">IDLE</div>
+  <div class="hud-mode" id="hud-mode">FRIDAY</div>
+  <div class="hud-status" id="hud-status">connecting...</div>
+  <div class="hud-gesture">
+    <span class="g-label" id="gesture-label">—</span>
+    <span class="g-sub" id="gesture-hint">press [G] or click to enable hand gestures</span>
+  </div>
+</div>
+<div class="hud-ring" id="hud-ring"></div>
+<button id="gesture-toggle" type="button">✋ GESTURES: OFF</button>
+<div class="gesture-cam" id="gesture-cam">
+  <video id="gesture-video" autoplay playsinline muted></video>
+  <canvas id="gesture-canvas" width="320" height="240"></canvas>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+/* ── Mode palette (per VERONIKA spec) ───────────────────────── */
+const MODE_COLORS = {
+  VERONIKA:     { primary: 0x00d2ff, secondary: 0x0077ff, name: 'VERONIKA' },
+  FRIDAY:       { primary: 0x38bdf8, secondary: 0xcbd5e1, name: 'FRIDAY' },
+  GIRLFRIEND:   { primary: 0xff007f, secondary: 0xaa00ff, name: 'GIRLFRIEND' },
+  ULTRON:       { primary: 0xff1a1a, secondary: 0x990000, name: 'ULTRON' },
+  PARTNER:      { primary: 0x8b5cf6, secondary: 0x6d28d9, name: 'PARTNER' },
+  EXAM_MENTOR:  { primary: 0xf59e0b, secondary: 0xb45309, name: 'EXAM MENTOR' },
+};
+
+/* State -> animation intensity multipliers */
+const STATE_FX = {
+  IDLE:      { speed: 1.0,  pulse: 1.0,  colorBoost: 0.85 },
+  LISTENING: { speed: 1.6,  pulse: 1.5,  colorBoost: 1.15 },
+  THINKING:  { speed: 2.4,  pulse: 2.0,  colorBoost: 1.35 },
+  SPEAKING:  { speed: 1.9,  pulse: 2.4,  colorBoost: 1.5 },
+};
+
+let currentMode  = 'FRIDAY';
+let currentState = 'IDLE';
+let audioLevel   = 0.0;   // 0..1 from Python FFT bridge
+let localFFT     = 0.0;   // 0..1 from browser mic (fallback)
+
+/* ── Scene setup ────────────────────────────────────────────── */
+const container = document.getElementById('orb-root');
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, container.clientWidth/container.clientHeight, 0.1, 500);
+camera.position.set(0, 0.5, 5.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.85;
+renderer.setClearColor(0x000000, 0);
+container.appendChild(renderer.domElement);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(container.clientWidth, container.clientHeight), 1.7, 0.45, 0.15
+);
+composer.addPass(bloom);
+
+/* Chromatic aberration + color grade + flicker */
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime:    { value: 0 },
+    uTint:    { value: new THREE.Color(0x00d2ff) },
+    uIntensity: { value: 0.003 },
+  },
+  vertexShader: `varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform vec3 uTint; uniform float uIntensity;
+    varying vec2 vUv;
+    void main(){
+      vec2 dir = vUv - vec2(0.5); float d = length(dir);
+      float off = uIntensity * d;
+      float flicker = 1.0 + 0.02 * sin(uTime*30.0) * sin(uTime*7.3);
+      vec4 cr = texture2D(tDiffuse, vUv + dir*off);
+      vec4 cg = texture2D(tDiffuse, vUv);
+      vec4 cb = texture2D(tDiffuse, vUv - dir*off*0.5);
+      vec4 col = vec4(cr.r, cg.g, cb.b, 1.0) * flicker;
+      // push toward the active persona tint
+      col.rgb = mix(col.rgb, col.rgb * uTint * 2.0, 0.35);
+      gl_FragColor = col;
+    }`
+};
+const gradePass = new ShaderPass(GradeShader);
+composer.addPass(gradePass);
+
+/* ── Orb construction (wireframe layers) ────────────────────── */
+const orbGroup = new THREE.Group();
+scene.add(orbGroup);
+
+const lineMat = (color, opacity=0.4) =>
+  new THREE.LineBasicMaterial({ color, transparent:true, opacity,
+    blending:THREE.AdditiveBlending, depthWrite:false });
+
+function latRing(radius, lat, segs=96) {
+  const pts = [];
+  const r = radius * Math.cos(lat), y = radius * Math.sin(lat);
+  for (let i=0;i<=segs;i++){ const a=(i/segs)*Math.PI*2;
+    pts.push(new THREE.Vector3(r*Math.cos(a), y, r*Math.sin(a))); }
+  return new THREE.BufferGeometry().setFromPoints(pts);
+}
+function meridian(radius, lon, segs=96) {
+  const pts=[];
+  for (let i=0;i<=segs;i++){ const lat=-Math.PI/2+(i/segs)*Math.PI;
+    pts.push(new THREE.Vector3(
+      radius*Math.cos(lat)*Math.cos(lon), radius*Math.sin(lat),
+      radius*Math.cos(lat)*Math.sin(lon))); }
+  return new THREE.BufferGeometry().setFromPoints(pts);
+}
+
+/* dynamic color collection, updated on mode change */
+const colorMats = [];
+
+function buildShell(radius, latCount, merCount, baseOpacity) {
+  const g = new THREE.Group();
+  for (let i=1;i<latCount;i++){
+    const lat = -Math.PI/2 + (i/latCount)*Math.PI;
+    const bright = i % 3 === 0;
+    const m = lineMat(MODE_COLORS[currentMode].primary, bright ? baseOpacity*3 : baseOpacity);
+    colorMats.push(m);
+    g.add(new THREE.Line(latRing(radius, lat), m));
+  }
+  for (let i=0;i<merCount;i++){
+    const lon = (i/merCount)*Math.PI*2;
+    const m = lineMat(MODE_COLORS[currentMode].primary, i%6===0 ? baseOpacity*2.5 : baseOpacity);
+    colorMats.push(m);
+    g.add(new THREE.Line(meridian(radius, lon), m));
+  }
+  return g;
+}
+
+const outerShell = buildShell(2.0, 26, 20, 0.10);
+orbGroup.add(outerShell);
+
+const shell2 = buildShell(2.12, 10, 8, 0.05);
+orbGroup.add(shell2);
+
+/* inner spirals */
+const innerCore = new THREE.Group();
+for (let s=0;s<7;s++){
+  const pts=[]; const turns=3+Math.random()*2; const R=0.9;
+  for (let i=0;i<=240;i++){ const t=(i/240)*Math.PI*2*turns; const lat=Math.sin(t*0.5)*0.6;
+    pts.push(new THREE.Vector3(R*Math.cos(lat)*Math.cos(t), R*Math.sin(lat), R*Math.cos(lat)*Math.sin(t))); }
+  const m=lineMat(MODE_COLORS[currentMode].secondary, 0.22);
+  colorMats.push(m);
+  innerCore.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), m));
+}
+orbGroup.add(innerCore);
+
+/* glowing core */
+const coreMat = new THREE.MeshBasicMaterial({
+  color: MODE_COLORS[currentMode].primary, transparent:true, opacity:0.55,
+  blending:THREE.AdditiveBlending, depthWrite:false });
+colorMats.push(coreMat);
+const coreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.16, 32, 32), coreMat);
+orbGroup.add(coreSphere);
+
+const icoWireMat = lineMat(MODE_COLORS[currentMode].primary, 0.6);
+colorMats.push(icoWireMat);
+const icoWire = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(0.26, 1)), icoWireMat);
+orbGroup.add(icoWire);
+
+/* dust particles */
+const dustCount = 1400;
+const dustPos = new Float32Array(dustCount*3);
+for (let i=0;i<dustCount;i++){
+  const r = 1.6 + Math.random()*1.6, th = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1);
+  dustPos[i*3]   = r*Math.sin(ph)*Math.cos(th);
+  dustPos[i*3+1] = r*Math.cos(ph);
+  dustPos[i*3+2] = r*Math.sin(ph)*Math.sin(th);
+}
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos,3));
+const dustMat = new THREE.PointsMaterial({
+  color: MODE_COLORS[currentMode].primary, size:0.035, transparent:true, opacity:0.55,
+  blending:THREE.AdditiveBlending, depthWrite:false });
+colorMats.push(dustMat);
+const dust = new THREE.Points(dustGeo, dustMat);
+orbGroup.add(dust);
+
+/* ── Mode / state application ───────────────────────────────── */
+function setPalette(primary, secondary, label){
+  colorMats.forEach((m, idx)=>{
+    const c = (idx % 3 === 0) ? secondary : primary;
+    if (m.color) m.color.setHex(c);
+  });
+  gradePass.uniforms.uTint.value.setHex(primary);
+  document.getElementById('hud-title').textContent = 'VERONIKA';
+  if (label) document.getElementById('hud-mode').textContent = label;
+  document.documentElement.style.setProperty('--orb-color', '#'+primary.toString(16).padStart(6,'0'));
+}
+function applyMode(mode){
+  if(!MODE_COLORS[mode]) return;
+  currentMode = mode;
+  const {primary, secondary, name} = MODE_COLORS[mode];
+  setPalette(primary, secondary, name);
+}
+/* Overlay / entity palettes pushed directly from Python as hex strings. */
+function applyColor(primaryHex, secondaryHex, label){
+  const primary   = parseInt(String(primaryHex).replace('#',''), 16);
+  const secondary = secondaryHex
+    ? parseInt(String(secondaryHex).replace('#',''), 16)
+    : primary;
+  if (isNaN(primary)) return;
+  setPalette(primary, secondary, label || null);
+}
+function applyState(state){
+  if(!STATE_FX[state]) return;
+  currentState = state;
+  document.getElementById('hud-state').textContent = state;
+}
+
+/* ── Animation loop ─────────────────────────────────────────── */
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  const fx = STATE_FX[currentState] || STATE_FX.IDLE;
+
+  // blend browser-local FFT (if available) with Python-provided level
+  const level = Math.min(1.0, Math.max(audioLevel, localFFT));
+  const boost = 1.0 + level * 1.6;
+
+  outerShell.rotation.y += 0.0016 * fx.speed * boost;
+  outerShell.rotation.x  = Math.sin(t*0.08)*0.05;
+  shell2.rotation.y     -= 0.0011 * fx.speed * boost;
+  shell2.rotation.z      = Math.sin(t*0.12)*0.03;
+  innerCore.rotation.y  -= 0.0055 * fx.speed * boost;
+  innerCore.rotation.z  += 0.0022 * fx.speed;
+  innerCore.rotation.x   = Math.cos(t*0.1)*0.08;
+  icoWire.rotation.x    += 0.009 * fx.speed * boost;
+  icoWire.rotation.y    += 0.013 * fx.speed * boost;
+  dust.rotation.y       += 0.00025 * fx.speed;
+
+  // pulse envelope: base + state pulse + live audio level
+  const surge = (Math.sin(t*1.2)*0.06 + Math.pow(Math.max(0, Math.sin(t*0.4)),5)*0.9) * fx.pulse;
+  const pulse = 1 + surge + level * 0.9 * fx.pulse;
+  coreSphere.scale.setScalar(pulse);
+  coreSphere.material.opacity = Math.min(0.85, (0.35 + level*0.5) * fx.colorBoost);
+  icoWire.scale.setScalar(1 + surge*0.5 + level*0.35);
+  dust.scale.setScalar(1 + level*0.15);
+
+  bloom.strength = (1.4 + Math.sin(t*0.8)*0.25) * fx.colorBoost * (1 + level*0.5);
+  gradePass.uniforms.uTime.value = t;
+
+  composer.render();
+}
+animate();
+
+/* ── Resize ─────────────────────────────────────────────────── */
+window.addEventListener('resize', ()=>{
+  const w = container.clientWidth, h = container.clientHeight;
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h); composer.setSize(w,h);
+});
+renderer.setSize(container.clientWidth, container.clientHeight);
+composer.setSize(container.clientWidth, container.clientHeight);
+
+/* ── WebSocket bridge (Python backend) ──────────────────────── */
+const WS_PORT = '__ORB_WS_PORT__';
+const WS_URL = `ws://${location.hostname}:${WS_PORT === '__ORB_WS_PORT__' ? '8766' : WS_PORT}/orb`;
+let ws = null, retry = 0;
+const statusEl = document.getElementById('hud-status');
+
+function connect(){
+  try { ws = new WebSocket(WS_URL); } catch(e){ scheduleRetry(); return; }
+  ws.onopen = ()=>{ retry = 0; statusEl.textContent = 'bridge connected'; };
+  ws.onclose = ()=>{ statusEl.textContent = 'bridge offline'; scheduleRetry(); };
+  ws.onerror = ()=>{ try{ ws.close(); }catch(e){} };
+  ws.onmessage = (ev)=>{
+    let msg; try { msg = JSON.parse(ev.data); } catch(e){ return; }
+    if (msg.type === 'state')      applyState(msg.value);
+    else if (msg.type === 'mode')  applyMode(msg.value);
+    else if (msg.type === 'color') applyColor(msg.primary, msg.secondary, msg.label);
+    else if (msg.type === 'audio') audioLevel = Math.min(1, Math.max(0, Number(msg.value)||0));
+    else if (msg.type === 'greeting') { /* reserved for wake greeting flash */ }
+  };
+}
+function scheduleRetry(){
+  retry++;
+  setTimeout(connect, Math.min(1000 * retry, 10000));
+}
+connect();
+
+/* ── Optional browser-side mic FFT (fallback if Python has no mic) ── */
+async function startLocalFFT(){
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    setInterval(()=>{
+      analyser.getByteFrequencyData(data);
+      let sum = 0; for (let i=0;i<data.length;i++) sum += data[i];
+      localFFT = Math.min(1, (sum/data.length)/128);
+    }, 40);
+  } catch(e){ /* permission denied; Python bridge still works */ }
+}
+startLocalFFT();
+
+/* ── Hand Gestures (MediaPipe Tasks-Vision) ──────────────────── */
+let gesturesEnabled = false;
+let handLandmarker = null;
+let gestureRunning = false;
+let gestureFrameId = 0;
+
+const gToggle = document.getElementById('gesture-toggle');
+const gCam    = document.getElementById('gesture-cam');
+const gVid    = document.getElementById('gesture-video');
+const gCan    = document.getElementById('gesture-canvas');
+const gLbl    = document.getElementById('gesture-label');
+const gHint   = document.getElementById('gesture-hint');
+const gRing   = document.getElementById('hud-ring');
+const gCtx    = gCan ? gCan.getContext('2d') : null;
+
+async function enableGestures(){
+  if(gesturesEnabled) return;
+  gHint.textContent = 'loading MediaPipe...';
+  try{
+    const VISION_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm";
+    const WASM_URL   = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+    const MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+    const mod = await import(VISION_URL);
+    const { HandLandmarker, FilesetResolver } = mod;
+    const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+    handLandmarker = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+      runningMode: "VIDEO", numHands: 1
+    });
+    const stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+    gVid.srcObject = stream;
+    await gVid.play();
+    gesturesEnabled = true;
+    gToggle.textContent = "✋ GESTURES: ON";
+    gCam.classList.add('on');
+    gRing.classList.add('on');
+    gHint.textContent = 'pinch to THINKING • open palm to LISTENING • fist to IDLE';
+    gestureRunning = true;
+    const loop = () => {
+      if(!gestureRunning || !handLandmarker) return;
+      gestureFrameId = requestAnimationFrame(loop);
+      const res = handLandmarker.detectForVideo(gVid, performance.now());
+      drawAndClassify(res);
+    };
+    loop();
+  }catch(e){
+    console.error('gesture init failed', e);
+    gHint.textContent = 'camera or CDN unavailable (gesture HUD disabled)';
+    gesturesEnabled = false;
+  }
+}
+
+function disableGestures(){
+  gestureRunning = false;
+  if(gestureFrameId) cancelAnimationFrame(gestureFrameId);
+  gesturesEnabled = false;
+  gToggle.textContent = "✋ GESTURES: OFF";
+  gCam.classList.remove('on');
+  gRing.classList.remove('on');
+  gLbl.textContent = '—';
+  gHint.textContent = 'press [G] or click to enable hand gestures';
+  if(gCtx){ gCtx.clearRect(0,0,gCan.width,gCan.height); }
+  if(gVid.srcObject){
+    const tracks = gVid.srcObject.getTracks();
+    tracks.forEach(t=>t.stop());
+    gVid.srcObject = null;
+  }
+}
+
+function drawAndClassify(res){
+  if(!gCtx) return;
+  gCtx.clearRect(0,0,gCan.width,gCan.height);
+  const hands = res.handednesses || [];
+  const lm = res.landmarks && res.landmarks[0];
+  if(!lm){
+    gLbl.textContent = 'NO HAND';
+    gRing.style.transform = 'scale(.9)';
+    return;
+  }
+  // landmarks are normalized 0..1; draw points/connections lightly
+  gCtx.strokeStyle = 'rgba(0,210,255,0.45)';
+  gCtx.lineWidth = 2;
+  gCtx.fillStyle = '#00d2ff';
+  lm.forEach((p,i)=>{
+    const x = p.x*gCan.width, y = p.y*gCan.height;
+    if(i<5) gCtx.fillStyle = 'rgba(240,240,240,0.9)';
+    else gCtx.fillStyle = 'rgba(0,210,255,0.9)';
+    gCtx.beginPath(); gCtx.arc(x,y,2.6,0,Math.PI*2); gCtx.fill();
+  });
+  gCtx.strokeStyle = 'rgba(0,210,255,0.35)';
+  // draw thumb/index/palm guides minimally
+  const dist = (a,b)=> Math.hypot(lm[a].x-lm[b].x, lm[a].y-lm[b].y);
+  const ext = (tip,pip)=> lm[tip].y < lm[pip].y - 0.02;
+  const fingers = [ext(8,6), ext(12,10), ext(16,14), ext(20,18)].filter(Boolean).length;
+  const pinch = dist(4,8) < 0.05;
+  let name='HAND', st=null;
+  if(pinch){ name='PINCH'; st='THINKING'; }
+  else if(fingers>=4){ name='OPEN PALM'; st='LISTENING'; }
+  else if(fingers<=1){ name='FIST'; st='IDLE'; }
+  else if(ext(8,6)&&ext(12,10)&&!ext(16,14)&&!ext(20,18)){ name='PEACE'; st='SPEAKING'; }
+  gLbl.textContent = name;
+  const open = pinch ? 1.4 : Math.max(0.6, fingers/4 + (pinch?0.4:0));
+  gRing.style.transform = `scale(${0.9 + open*0.25})`;
+  if(st) applyState(st);
+}
+
+if(gToggle){
+  gToggle.addEventListener('click', ()=>{
+    if(!gesturesEnabled) enableGestures(); else disableGestures();
+  });
+}
+
+/* keyboard fallbacks for manual testing */
+window.addEventListener('keydown', (e)=>{
+  if(e.key === 'g' || e.key === 'G'){ if(!gesturesEnabled) enableGestures(); else disableGestures(); e.preventDefault(); }
+  if(e.key === 'r') applyState('IDLE');
+  if(e.key === '1') applyMode('VERONIKA');
+  if(e.key === '2') applyMode('FRIDAY');
+  if(e.key === '3') applyMode('ULTRON');
+  if(e.key === '4') applyMode('GIRLFRIEND');
+  if(e.key === '5') applyMode('PARTNER');
+  if(e.key === '6') applyMode('EXAM_MENTOR');
+});
+</script>
+</body>
+</html>
