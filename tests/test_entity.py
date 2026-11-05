@@ -6,7 +6,7 @@ import pytest
 from app.config import config
 from ai.entity_manager import (
     EntityManager, ENTITIES, OVERLAYS,
-    GIRLFRIEND, EXAM_MENTOR, PARTNER,
+    COMPANION, GIRLFRIEND, EXAM_MENTOR, PARTNER,
 )
 
 
@@ -38,10 +38,13 @@ class TestEntities:
         assert vp.dsp_filter == "ultron"
         assert vp.pitch_hz.startswith("-")
 
-    def test_ultron_wake_greeting_is_kamine_stark(self):
+    def test_ultron_wake_greeting_is_stark_not_abusive(self):
         em = EntityManager.get_instance()
         em.set_entity("ultron")
-        assert "kamine Stark" in em.wake_greeting
+        from ai.entity_manager import ULTRON as ULTRON_ENTITY
+        pool = " ".join(ULTRON_ENTITY.greeting_pool)
+        assert "Stark" in pool  # sarcastic address present in the pool
+        assert "kamine" not in pool.lower()  # never abusive
 
     def test_friday_is_tactical_female(self):
         em = EntityManager.get_instance()
@@ -70,17 +73,27 @@ class TestEntities:
 
 class TestOverlays:
     def test_overlays_exist(self):
-        assert set(OVERLAYS.keys()) == {"girlfriend", "partner", "exam_mentor"}
+        assert set(OVERLAYS.keys()) == {"companion", "partner", "exam_mentor"}
 
-    def test_girlfriend_overlay_changes_color_and_prompt(self):
+    def test_companion_overlay_changes_color_and_prompt(self):
         em = EntityManager.get_instance()
         em.set_entity("veronika")
         base_prompt = em.system_prompt
-        assert em.set_overlay("girlfriend") is True
-        assert em.overlay_id == "girlfriend"
-        assert em.orb_color == GIRLFRIEND.orb_color == "#ff007f"
-        assert "Girlfriend" in em.system_prompt
+        assert em.set_overlay("companion") is True
+        assert em.overlay_id == "companion"
+        assert em.orb_color == COMPANION.orb_color == "#ff007f"
+        assert "Companion" in em.system_prompt
         assert em.system_prompt != base_prompt
+
+    def test_companion_overlay_is_non_romantic(self):
+        em = EntityManager.get_instance()
+        em.set_entity("veronika")
+        em.set_overlay("companion")
+        prompt = " ".join(em.system_prompt.split()).lower()
+        for term in ("girlfriend", "jaan", "sweetheart"):
+            assert term not in prompt
+        # Boundary must be declared as an explicit negation.
+        assert "not a romantic partner" in prompt
 
     def test_exam_mentor_overlay(self):
         em = EntityManager.get_instance()
@@ -96,7 +109,7 @@ class TestOverlays:
     def test_clear_overlay_restores_entity_color(self):
         em = EntityManager.get_instance()
         em.set_entity("ultron")
-        em.set_overlay("girlfriend")
+        em.set_overlay("companion")
         assert em.orb_color == "#ff007f"
         em.clear_overlay()
         assert em.overlay_id == ""
@@ -113,7 +126,7 @@ class TestOverlays:
         for _ in range(3):
             em.cycle_overlay()
             seen.add(em.overlay_id)
-        assert {"", "girlfriend", "partner", "exam_mentor"} == seen
+        assert {"", "companion", "partner", "exam_mentor"} == seen
 
 
 class TestLegacyBridge:
@@ -122,10 +135,10 @@ class TestLegacyBridge:
         em.set_entity("ultron")
         assert em.legacy_mode_id == "ultron"
 
-    def test_girlfriend_overlay_maps_to_girlfriend(self):
+    def test_companion_overlay_maps_to_companion(self):
         em = EntityManager.get_instance()
-        em.set_state("veronika", "girlfriend")
-        assert em.legacy_mode_id == "girlfriend"
+        em.set_state("veronika", "companion")
+        assert em.legacy_mode_id == "companion"
 
     def test_friday_maps_to_friday(self):
         em = EntityManager.get_instance()
@@ -136,9 +149,16 @@ class TestLegacyBridge:
         em = EntityManager.get_instance()
         assert em.apply_legacy_mode("ultron") is True
         assert em.entity_id == "ultron"
-        assert em.apply_legacy_mode("girlfriend") is True
-        assert em.overlay_id == "girlfriend"
+        assert em.apply_legacy_mode("companion") is True
+        assert em.overlay_id == "companion"
         assert em.apply_legacy_mode("nope") is False
+
+    def test_deprecated_girlfriend_alias_still_works(self):
+        em = EntityManager.get_instance()
+        assert em.apply_legacy_mode("girlfriend") is True
+        assert em.overlay_id == "companion"
+        assert em.set_overlay("girlfriend") is True
+        assert em.overlay_id == "companion"
 
 
 class TestStateIntrospection:

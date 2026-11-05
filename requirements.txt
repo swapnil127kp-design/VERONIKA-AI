@@ -16,6 +16,11 @@ PyAudio>=0.2.14,<0.3.0
 pyttsx3>=2.90,<3.0.0
 edge-tts>=6.1.0,<8.0.0
 pydub>=0.25.1,<1.0.0
+numpy>=1.26.0,<3.0.0
+# simpleaudio is an OPTIONAL TTS playback tier (voice/text_to_speech.py degrades
+# gracefully without it). It has no prebuilt wheel for Python 3.13 and needs
+# MSVC C++ Build Tools; install manually only if you want that playback tier:
+# pip install simpleaudio
 
 # Wake Word (optional)
 pvporcupine>=3.0.0,<4.0.0
@@ -33,6 +38,9 @@ keyring>=25.0.0,<26.0.0
 
 # Packaging
 pyinstaller>=6.0.0,<7.0.0
+
+# Local Speech Recognition (Phase 5)
+vosk>=0.3.45,<1.0.0
 
 # Testing
 pytest>=8.0.0,<9.0.0

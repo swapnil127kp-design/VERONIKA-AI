@@ -93,6 +93,18 @@ Never execute destructive operations without confirmation.
 class AIProviderBase(ABC):
     """Abstract base class for AI provider implementations."""
 
+    # Cost classification for the free-first policy: "free" | "local" | "paid"
+    cost_tier: str = "paid"
+
+    def capabilities(self) -> Dict[str, Any]:
+        """Declare provider capabilities for capability-aware routing."""
+        return {
+            "streaming": False,
+            "tools": False,
+            "vision": self.supports_vision(),
+            "context_limit": None,
+        }
+
     @abstractmethod
     def get_name(self) -> str:
         """Return the provider name."""

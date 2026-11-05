@@ -224,15 +224,19 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(right_panel, 1)
 
-        # Welcome message
+        # Welcome message — respects the persona.startup_greeting toggle
+        # (directive: greeting disableable, and never activates the mic).
         em = self.entity_manager
-        self.chat_panel.add_assistant_message(
-            f"{em.wake_greeting}\n\n"
+        help_text = (
             "I can help with conversations, launch apps, open websites, manage files, "
             "take screenshots, set reminders, and much more.\n\n"
             "Type a message or use the 🎙 Voice button to get started! "
             f"(Entity: {em.display_name} — switch entity & overlay via the selectors in the top bar.)"
         )
+        if PersonaManager.is_startup_greeting_enabled():
+            self.chat_panel.add_assistant_message(f"{em.wake_greeting}\n\n{help_text}")
+        else:
+            self.chat_panel.add_assistant_message(help_text)
 
     def _setup_shortcuts(self):
         # Ctrl+N: New conversation
@@ -423,6 +427,10 @@ class MainWindow(QMainWindow):
         """Handle a message from the user."""
         if self._is_processing:
             return
+
+        # Barge-in: a new user message interrupts any ongoing speech.
+        if self.tts.is_speaking:
+            self.tts.stop()
 
         self._is_processing = True
         self.chat_panel.add_user_message(text)

@@ -1,6 +1,15 @@
 """
 VERONIKA AI - Speech Recognition
-Converts speech audio to text using SpeechRecognition library.
+Converts speech audio to text.
+
+Engines (config: voice.stt_engine):
+  - "google_free" (default): SpeechRecognition lib + Google's free web API.
+    Audio leaves the machine (cloud). Free, no key, decent accuracy.
+  - "vosk_local": fully OFFLINE Vosk STT using the Part 7 bundled US-English
+    model. Audio never leaves the machine (privacy-first option).
+
+Hindi/Hinglish: google_free supports hi-IN natively. The bundled Vosk model
+is en-US only -- Hindi via local STT needs a separate hi-IN Vosk model.
 """
 import logging
 import threading
@@ -10,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class SpeechRecognizer:
-    """Speech-to-text using the SpeechRecognition library with Google's free API."""
+    """Speech-to-text with selectable engine (cloud-free-tier or local)."""
 
     def __init__(self):
         self._recognizer = None
@@ -18,6 +27,8 @@ class SpeechRecognizer:
         self._cancel_flag = threading.Event()
         self._lock = threading.Lock()
         self._listen_thread: Optional[threading.Thread] = None
+        self._mic = None       # MicrophoneManager (vosk_local path)
+        self._vosk = None      # VoskSTT (vosk_local path)
 
     def _ensure_recognizer(self):
         if self._recognizer is None:
@@ -35,6 +46,10 @@ class SpeechRecognizer:
     def is_listening(self) -> bool:
         return self._is_listening
 
+    def _active_engine(self) -> str:
+        from app.config import config
+        return config.get("voice", "stt_engine", "google_free")
+
     def recognize_speech(
         self,
         language: str = "en-US",
@@ -48,6 +63,7 @@ class SpeechRecognizer:
         """
         Start listening for speech in a background thread.
         Calls on_result with recognized text or on_error with error message.
+        The engine is chosen by config (voice.stt_engine).
         """
         if self._is_listening:
             if on_error:
@@ -55,76 +71,150 @@ class SpeechRecognizer:
             return
 
         self._cancel_flag.clear()
+        engine = self._active_engine()
+        worker = self._listen_vosk if engine == "vosk_local" else self._listen_google
+        self._listen_thread = threading.Thread(
+            target=worker,
+            args=(language, on_result, on_error, on_started, on_stopped,
+                  timeout, phrase_time_limit),
+            daemon=True,
+        )
+        self._listen_thread.start()
 
-        def _listen():
-            try:
-                import speech_recognition as sr
-                self._ensure_recognizer()
+    # ------------------------------------------------------------------
+    # Engine: Google free web API (cloud)
+    # ------------------------------------------------------------------
 
-                with self._lock:
-                    self._is_listening = True
+    def _listen_google(self, language, on_result, on_error, on_started,
+                       on_stopped, timeout, phrase_time_limit):
+        try:
+            import speech_recognition as sr
+            self._ensure_recognizer()
 
-                if on_started:
-                    on_started()
+            with self._lock:
+                self._is_listening = True
 
-                with sr.Microphone() as source:
-                    logger.info("Adjusting for ambient noise...")
-                    self._recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            if on_started:
+                on_started()
 
-                    if self._cancel_flag.is_set():
-                        return
-
-                    logger.info("Listening for speech (lang=%s)...", language)
-                    try:
-                        audio = self._recognizer.listen(
-                            source,
-                            timeout=timeout,
-                            phrase_time_limit=phrase_time_limit,
-                        )
-                    except sr.WaitTimeoutError:
-                        if on_error:
-                            on_error("No speech detected. Please try again.")
-                        return
+            with sr.Microphone() as source:
+                logger.info("Adjusting for ambient noise...")
+                self._recognizer.adjust_for_ambient_noise(source, duration=0.5)
 
                 if self._cancel_flag.is_set():
                     return
 
-                logger.info("Recognizing speech...")
+                logger.info("Listening for speech (lang=%s, engine=google_free)...", language)
                 try:
-                    text = self._recognizer.recognize_google(audio, language=language)
-                    logger.info("Recognized: %s", text[:50] + "..." if len(text) > 50 else text)
-                    if on_result:
-                        on_result(text)
-                except sr.UnknownValueError:
+                    audio = self._recognizer.listen(
+                        source,
+                        timeout=timeout,
+                        phrase_time_limit=phrase_time_limit,
+                    )
+                except sr.WaitTimeoutError:
                     if on_error:
-                        on_error("Could not understand the audio. Please speak clearly and try again.")
-                except sr.RequestError as e:
-                    if on_error:
-                        on_error(f"Speech recognition service error: {e}")
+                        on_error("No speech detected. Please try again.")
+                    return
 
-            except Exception as e:
-                logger.error("Speech recognition error: %s", e)
+            if self._cancel_flag.is_set():
+                return
+
+            logger.info("Recognizing speech...")
+            try:
+                text = self._recognizer.recognize_google(audio, language=language)
+                logger.info("Recognized: %s", text[:50] + "..." if len(text) > 50 else text)
+                if on_result:
+                    on_result(text)
+            except sr.UnknownValueError:
                 if on_error:
-                    on_error(f"Microphone error: {e}")
-            finally:
-                with self._lock:
-                    self._is_listening = False
-                if on_stopped:
-                    on_stopped()
+                    on_error("Could not understand the audio. Please speak clearly and try again.")
+            except sr.RequestError as e:
+                if on_error:
+                    on_error(f"Speech recognition service error: {e}")
 
-        self._listen_thread = threading.Thread(target=_listen, daemon=True)
-        self._listen_thread.start()
+        except Exception as e:
+            logger.error("Speech recognition error: %s", e)
+            if on_error:
+                on_error(f"Microphone error: {e}")
+        finally:
+            with self._lock:
+                self._is_listening = False
+            if on_stopped:
+                on_stopped()
+
+    # ------------------------------------------------------------------
+    # Engine: Vosk (fully offline)
+    # ------------------------------------------------------------------
+
+    def _listen_vosk(self, language, on_result, on_error, on_started,
+                     on_stopped, timeout, phrase_time_limit):
+        try:
+            from voice.microphone import MicrophoneManager
+            from voice.stt_vosk import VoskSTT
+
+            if self._mic is None:
+                self._mic = MicrophoneManager()
+            if self._vosk is None:
+                self._vosk = VoskSTT()
+
+            if not self._vosk.is_available:
+                if on_error:
+                    on_error(
+                        "Local STT unavailable: install 'vosk' (pip install vosk) "
+                        "and ensure the Vosk model path is valid. "
+                        "Falling back is not automatic -- switch voice.stt_engine "
+                        "to google_free for cloud recognition."
+                    )
+                return
+
+            with self._lock:
+                self._is_listening = True
+            if on_started:
+                on_started()
+
+            logger.info("Listening for speech (engine=vosk_local, offline)...")
+            wav = self._mic.record_seconds(duration=phrase_time_limit)
+            if self._cancel_flag.is_set():
+                return
+            if not wav:
+                if on_error:
+                    on_error("No speech captured. Please try again.")
+                return
+
+            text = self._vosk.transcribe_wav(wav, language=language)
+            if text:
+                if on_result:
+                    on_result(text)
+            elif on_error:
+                on_error("Could not understand the audio (local model).")
+
+        except Exception as e:
+            logger.error("Vosk recognition error: %s", e)
+            if on_error:
+                on_error(f"Local recognition error: {e}")
+        finally:
+            with self._lock:
+                self._is_listening = False
+            if on_stopped:
+                on_stopped()
 
     def cancel(self):
         """Cancel ongoing recognition."""
         self._cancel_flag.set()
+        if self._mic is not None:
+            self._mic.cancel_recording()
         with self._lock:
             self._is_listening = False
 
     def get_supported_languages(self) -> list:
-        """Return supported language codes."""
-        return [
+        """Return supported language codes for the active engine."""
+        base = [
             {"code": "en-US", "name": "English (US)"},
             {"code": "en-IN", "name": "English (India)"},
             {"code": "hi-IN", "name": "Hindi"},
         ]
+        if self._active_engine() == "vosk_local":
+            for item in base:
+                if item["code"].startswith("hi"):
+                    item["name"] += " (needs separate Vosk hi-IN model)"
+        return base

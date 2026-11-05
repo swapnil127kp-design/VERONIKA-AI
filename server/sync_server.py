@@ -575,19 +575,17 @@ class SyncServer:
         logger.info("Sync server stopped")
 
     def _print_connection_info(self):
-        try:
-            from server.auth import SyncAuth
-            token = SyncAuth().master_token
-        except Exception:
-            token = "(unavailable)"
+        # Security: never print the master token to the console (it can end up
+        # in terminal scrollback, logs, or screenshots). The token is available
+        # in Settings > General > Phone Sync.
         lan_ip = _detect_lan_ip()
         print("\n" + "=" * 62)
         print("  VERONIKA Phone Sync Server")
         print(f"  Local  : {self.base_url}")
         print(f"  LAN    : http://{lan_ip}:{self._port_in_use or self.port}")
         print(f"  WS     : {self.ws_url}")
-        print(f"  Token  : {token}")
-        print("  Enter this token in the Android app's API & Connection screen.")
+        print("  Token  : (hidden) — view it in Settings > General > Phone Sync")
+        print("  Enter the token in the Android app's API & Connection screen.")
         print("=" * 62 + "\n")
 
 

@@ -7,7 +7,7 @@
 [![Tests: 205 Passed](https://img.shields.io/badge/Tests-205%20Passed-brightgreen.svg)](tests/)
 [![Author: Swapnil Kumar](https://img.shields.io/badge/Author-Swapnil%20Kumar-blueviolet.svg)](#-author--maintainer)
 
-An open-source, production-grade autonomous desktop AI assistant and multi-agent orchestrator built with **PySide6 (Qt 6)**. VERONIKA combines multi-provider LLM intelligence (**OpenAI GPT-4o**, **Google Gemini**) with full **Model Context Protocol (MCP)** tool integration, multi-agent swarm execution, real-time voice and vision, persistent SQLite memory, and deep Windows automation.
+An open-source, production-grade autonomous desktop AI assistant and multi-agent orchestrator built with **PySide6 (Qt 6)**. VERONIKA combines multi-provider LLM intelligence (**OpenAI**, **Google Gemini**, **Groq**, **OpenRouter**, **OmniRoute**) with full **Model Context Protocol (MCP)** tool integration, multi-agent swarm execution, real-time voice and vision, persistent SQLite memory, and deep Windows automation.
 
 ---
 
@@ -37,7 +37,7 @@ An open-source, production-grade autonomous desktop AI assistant and multi-agent
 
 | Category | Description |
 |---|---|
-| 🤖 **Dual AI Providers** | Hot-swappable backends for **OpenAI** (GPT-4o / Codex) and **Google Gemini** with intelligent routing |
+| 🤖 **Multi AI Providers** | Hot-swappable backends for **OpenAI**, **Google Gemini**, **Groq**, **OpenRouter**, and **OmniRoute** with intelligent routing |
 | 🔌 **Model Context Protocol (MCP)** | Standardized tool integration allowing dynamic execution of external developer servers |
 | 🐝 **Autonomous Swarm Coordinator** | Multi-worker parallel reasoning engine for executing complex development and automation tasks |
 | 🎭 **Multi-Entity Persona System** | Switch dynamically between *VERONIKA* (Commander), *FRIDAY* (Tactical), and *ULTRON* (Guardian) |
@@ -84,13 +84,15 @@ VERONIKA/
 │   └── workflow_engine.py      # Sequenced workflow executor
 │
 ├── mcp/                        # Model Context Protocol
-│   ├── mcp_client.py           # Standardized MCP client
-│   └── mcp_server_registry.py  # External tool configuration
+│   ├── mcp_client.py           # Standardized MCP client (stdio + HTTP)
+│   └── rea_bridge.py           # ReAct agent loop with tool dispatch
 │
 ├── memory/                     # Local Storage & Knowledge
 │   ├── database.py             # SQLite connection & schema migrations
 │   ├── memory_manager.py       # Conversational memory API
-│   └── repositories.py         # Typed repository data access
+│   ├── repositories.py         # Typed repository data access
+│   └── reminders/              # Reminder scheduling
+│       └── reminder_manager.py
 │
 ├── server/                     # Communication & Sync
 │   ├── auth.py                 # HMAC token authentication
@@ -183,7 +185,7 @@ The repository includes a comprehensive test suite covering AI providers, automa
 pytest tests/ -v
 ```
 
-All 205 tests pass cleanly in under 10 seconds.
+All 205 tests pass cleanly in about 12 seconds.
 
 ---
 

@@ -48,17 +48,30 @@ DEFAULT_CONFIG = {
         "dynamic_routing": True,
         "omniroute_base_url": "http://127.0.0.1:20128/v1",
         "omniroute_model": "kr/qwen3-coder-next",
+        "ollama_base_url": "http://127.0.0.1:11434/v1",
+        "ollama_model": "llama3.2",
+        # Free-first policy: never silently use paid providers when enabled.
+        "free_only": False,
     },
     "voice": {
         "tts_enabled": True,
         "tts_voice": "default",
         "tts_speed": 150,
         "stt_language": "en-US",
+        # STT engine: "google_free" (cloud, free) | "vosk_local" (offline)
+        "stt_engine": "google_free",
+        # Vosk model dir (Part 7 salvaged asset; override for other models)
+        "vosk_model_path": "",
         "push_to_talk_key": "ctrl+shift+v",
     },
     "wake_word": {
         "enabled": False,
         "sensitivity": 0.5,
+    },
+    "scout": {
+        # Background free-model discovery watcher (read-only, alerts only)
+        "enabled": True,
+        "interval_seconds": 3600,
     },
     "ui": {
         "theme": "dark",
@@ -87,6 +100,8 @@ DEFAULT_CONFIG = {
     },
     "persona": {
         "mode": "friday",
+        # Startup greeting toggle (directive: disableable; never activates mic)
+        "startup_greeting": True,
     },
     "entity": {
         "active": "veronika",
@@ -199,6 +214,7 @@ class AppConfig:
 
         env_map = {
             "AI_PROVIDER": ("ai", "provider"),
+            "AI_FREE_ONLY": ("ai", "free_only"),
             "OPENAI_MODEL": ("ai", "openai_model"),
             "GOOGLE_MODEL": ("ai", "google_model"),
             "TTS_ENABLED": ("voice", "tts_enabled"),
@@ -284,6 +300,10 @@ class AppConfig:
         env_map = {
             "openai": "OPENAI_API_KEY",
             "google": "GOOGLE_API_KEY",
+            "groq": "GROQ_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
+            "omniroute": "OMNIROUTE_API_KEY",
+            "picovoice": "PICOVOICE_ACCESS_KEY",
         }
         env_var = env_map.get(provider, "")
         return os.environ.get(env_var) or None

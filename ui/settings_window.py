@@ -301,8 +301,29 @@ class SettingsWindow(QDialog):
         self._auto_save_check.setChecked(config.get("memory", "auto_save_conversations", True))
         m_layout.addWidget(self._auto_save_check)
 
+        sync_group = QGroupBox("Phone Sync")
+        s_layout = QVBoxLayout(sync_group)
+
+        sync_note = QLabel(
+            "The sync token pairs the Android app with this PC. It is stored in "
+            "Windows Credential Manager and is never printed to the console."
+        )
+        sync_note.setWordWrap(True)
+        sync_note.setStyleSheet(f"color: {Colors.TEXT_SECONDARY.name()}; font-size: 11px;")
+        s_layout.addWidget(sync_note)
+
+        sync_row = QHBoxLayout()
+        reveal_btn = CyberButton("Show Token")
+        reveal_btn.clicked.connect(self._show_sync_token)
+        rotate_btn = CyberButton("Rotate Token", Colors.ORANGE)
+        rotate_btn.clicked.connect(self._rotate_sync_token)
+        sync_row.addWidget(reveal_btn)
+        sync_row.addWidget(rotate_btn)
+        s_layout.addLayout(sync_row)
+
         layout.addWidget(group)
         layout.addWidget(mem_group)
+        layout.addWidget(sync_group)
         layout.addStretch()
         return widget
 
@@ -379,6 +400,43 @@ class SettingsWindow(QDialog):
             self, "API Key Saved",
             f"API key for {provider} has been securely stored.\n\n"
             "Note: Keys are stored in Windows Credential Manager."
+        )
+
+    def _show_sync_token(self):
+        """Reveal the sync master token without printing it to any log."""
+        try:
+            from server.auth import SyncAuth
+            token = SyncAuth().master_token
+        except Exception as e:
+            QMessageBox.warning(self, "Phone Sync", f"Could not load sync token: {e}")
+            return
+        QMessageBox.information(
+            self, "Phone Sync Token",
+            f"Your sync master token:\n\n{token}\n\n"
+            "Enter this in the Android app's API & Connection screen. "
+            "Keep it private — anyone with this token can connect to your PC.",
+        )
+
+    def _rotate_sync_token(self):
+        """Invalidate the current sync token and issue a new one."""
+        confirm = QMessageBox.question(
+            self, "Rotate Sync Token",
+            "Invalidate the current sync token and issue a new one?\n\n"
+            "All paired devices will need to re-authenticate with the new token.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            from server.auth import SyncAuth
+            token = SyncAuth().rotate_token()
+        except Exception as e:
+            QMessageBox.warning(self, "Phone Sync", f"Could not rotate token: {e}")
+            return
+        QMessageBox.information(
+            self, "Phone Sync",
+            f"New sync token:\n\n{token}\n\n"
+            "Enter it in the Android app to re-pair.",
         )
 
     def _save_settings(self):

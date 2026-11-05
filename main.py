@@ -71,12 +71,20 @@ def run_cli():
                 print("Available actions:")
                 for a in actions.get_available_actions():
                     print(f" - {a}")
-                print("\nPersona commands: modes | mode friday | mode girlfriend | mode ultron")
+                print("\nPersona commands: modes | mode friday | mode companion | mode ultron"
+                      " (alias: girlfriend -> companion)")
+                print("Model Scout: scout (live free-model catalogue, read-only)")
                 continue
             if user_input.lower() == "modes":
                 for m in persona.get_available_modes():
                     marker = "*" if m["mode_id"] == persona.mode_id else " "
                     print(f" {marker} {m['display_name']:<12} {m['description']}")
+                continue
+            if user_input.lower() == "scout":
+                # Phase 4 Model Scout: read-only live catalogue check.
+                from ai.model_scout import generate_report, format_report
+                print("Scouting live model catalogues (read-only)...")
+                print(format_report(generate_report()))
                 continue
             if user_input.lower().startswith("mode "):
                 requested = user_input[5:].strip().lower()

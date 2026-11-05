@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from enum import Enum
@@ -118,9 +119,19 @@ class OpenAICompatibleProvider(AIProviderBase):
     default_model: str = ""
     needs_key: bool = True
     supports_images: bool = False
+    # Cost classification for the free-first policy: "free" | "local" | "paid"
+    cost_tier: str = "paid"
+    # Hardcoded candidate models used when live /models discovery fails
+    fallback_models: List[str] = []
+
+    # Cached health/model discovery (avoids probing endpoints on every call)
+    _STATUS_TTL = 30.0
+    _MODELS_TTL = 300.0
 
     def __init__(self):
         self._cancelled = False
+        self._status_cache: Optional[Tuple[ProviderStatus, float]] = None
+        self._models_cache: Optional[Tuple[List[str], float]] = None
 
     def get_name(self) -> str:
         return self.name
@@ -132,16 +143,66 @@ class OpenAICompatibleProvider(AIProviderBase):
         env_name = self.provider_key.upper() + "_API_KEY"
         return os.environ.get(env_name) or None
 
+    def _probe_endpoint(self, timeout: float = 2.0) -> bool:
+        """Cheap reachability probe against GET /models."""
+        try:
+            url = f"{self.base_url.rstrip('/')}/models"
+            req = urllib.request.Request(url, headers=self._headers())
+            with urllib.request.urlopen(req, timeout=timeout):
+                return True
+        except Exception:
+            return False
+
     def get_status(self) -> ProviderStatus:
         if not self.needs_key or self._get_api_key():
-            return ProviderStatus.AVAILABLE
+            now = time.monotonic()
+            if self._status_cache and now - self._status_cache[1] < self._STATUS_TTL:
+                return self._status_cache[0]
+            status = (
+                ProviderStatus.AVAILABLE
+                if self._probe_endpoint()
+                else ProviderStatus.UNAVAILABLE
+            )
+            self._status_cache = (status, now)
+            return status
         return ProviderStatus.NO_API_KEY
 
+    def _fetch_models(self) -> Optional[List[str]]:
+        """Live model discovery via GET /models. Returns None on failure."""
+        try:
+            url = f"{self.base_url.rstrip('/')}/models"
+            req = urllib.request.Request(url, headers=self._headers())
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            items = body.get("data", []) if isinstance(body, dict) else []
+            models = [
+                m.get("id") for m in items if isinstance(m, dict) and m.get("id")
+            ]
+            return models or None
+        except Exception:
+            return None
+
     def get_available_models(self) -> List[str]:
-        return [self.default_model] if self.default_model else []
+        if self._models_cache:
+            models, ts = self._models_cache
+            if time.monotonic() - ts < self._MODELS_TTL:
+                return models
+        live = self._fetch_models()
+        if live:
+            self._models_cache = (live, time.monotonic())
+            return live
+        return list(self.fallback_models)
 
     def supports_vision(self) -> bool:
         return self.supports_images
+
+    def capabilities(self) -> Dict[str, Any]:
+        return {
+            "streaming": True,
+            "tools": False,
+            "vision": self.supports_images,
+            "context_limit": None,
+        }
 
     def cancel(self):
         self._cancelled = True
@@ -296,34 +357,28 @@ class OpenAICompatibleProvider(AIProviderBase):
 
 
 class OmniRouteProvider(OpenAICompatibleProvider):
-    """Local OmniRoute gateway (localhost:20128) -- free models, no key required."""
+    """Local OmniRoute gateway (localhost:20128) -- free models, no key required.
+
+    Model identifiers below are owner-supplied candidates, not verified models;
+    live discovery via GET /models takes precedence when the gateway is running.
+    """
 
     name = "OmniRoute (Local)"
     provider_key = "omniroute"
     base_url = "http://127.0.0.1:20128/v1"
     default_model = "kr/qwen3-coder-next"
     needs_key = False
+    cost_tier = "local"
+    fallback_models = [
+        "kr/qwen3-coder-next",
+        "agentrouter/deepseek-v4-flash",
+        "glm-5.3",
+    ]
 
     def __init__(self):
         super().__init__()
         self.base_url = config.get("ai", "omniroute_base_url", self.base_url)
         self.default_model = config.get("ai", "omniroute_model", self.default_model)
-
-    def get_status(self) -> ProviderStatus:
-        try:
-            url = f"{self.base_url.rstrip('/')}/models"
-            req = urllib.request.Request(url, headers=self._headers())
-            with urllib.request.urlopen(req, timeout=2):
-                return ProviderStatus.AVAILABLE
-        except Exception:
-            return ProviderStatus.UNAVAILABLE
-
-    def get_available_models(self) -> List[str]:
-        return [
-            "kr/qwen3-coder-next",
-            "agentrouter/deepseek-v4-flash",
-            "glm-5.3",
-        ]
 
 
 class GroqProvider(OpenAICompatibleProvider):
@@ -333,14 +388,13 @@ class GroqProvider(OpenAICompatibleProvider):
     provider_key = "groq"
     base_url = "https://api.groq.com/openai/v1"
     default_model = "llama-3.3-70b-versatile"
-
-    def get_available_models(self) -> List[str]:
-        return [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "gemma2-9b-it",
-            "mixtral-8x7b-32768",
-        ]
+    cost_tier = "free"
+    fallback_models = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "gemma2-9b-it",
+        "mixtral-8x7b-32768",
+    ]
 
 
 class OpenRouterProvider(OpenAICompatibleProvider):
@@ -350,14 +404,38 @@ class OpenRouterProvider(OpenAICompatibleProvider):
     provider_key = "openrouter"
     base_url = "https://openrouter.ai/api/v1"
     default_model = "meta-llama/llama-3.3-70b-instruct:free"
+    cost_tier = "free"  # default model is a :free variant; paid models exist
+    fallback_models = [
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "deepseek/deepseek-chat-v3-0324:free",
+        "google/gemma-2-9b-it:free",
+        "mistralai/mistral-7b-instruct:free",
+    ]
 
-    def get_available_models(self) -> List[str]:
-        return [
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "deepseek/deepseek-chat-v3-0324:free",
-            "google/gemma-2-9b-it:free",
-            "mistralai/mistral-7b-instruct:free",
-        ]
+
+class OllamaProvider(OpenAICompatibleProvider):
+    """Optional local Ollama server (OpenAI-compatible endpoint).
+
+    Not part of the default routing chains; pin it with set_provider("ollama")
+    or add it to a task chain when local inference is desired.
+    """
+
+    name = "Ollama (Local)"
+    provider_key = "ollama"
+    base_url = "http://127.0.0.1:11434/v1"
+    default_model = "llama3.2"
+    needs_key = False
+    cost_tier = "local"
+    fallback_models = [
+        "llama3.2",
+        "llama3.1:8b",
+        "qwen2.5-coder:7b",
+    ]
+
+    def __init__(self):
+        super().__init__()
+        self.base_url = config.get("ai", "ollama_base_url", self.base_url)
+        self.default_model = config.get("ai", "ollama_model", self.default_model)
 
 
 # ======================================================================
@@ -366,6 +444,8 @@ class OpenRouterProvider(OpenAICompatibleProvider):
 
 class OpenAIProvider(AIProviderBase):
     """OpenAI API provider (GPT-4o, etc.)."""
+
+    cost_tier = "paid"
 
     def __init__(self):
         self._client = None
@@ -489,12 +569,22 @@ class OpenAIProvider(AIProviderBase):
         model = config.get("ai", "openai_model", "gpt-4o")
         return model in ("gpt-4o", "gpt-4o-mini", "gpt-4-turbo")
 
+    def capabilities(self) -> Dict[str, Any]:
+        return {
+            "streaming": True,
+            "tools": True,
+            "vision": self.supports_vision(),
+            "context_limit": None,
+        }
+
     def cancel(self):
         self._cancelled = True
 
 
 class GoogleProvider(AIProviderBase):
     """Google Gemini API provider with both SDK and native REST support."""
+
+    cost_tier = "free"  # Gemini free tier; paid tiers exist beyond quota
 
     def __init__(self):
         self._model_instance = None
@@ -561,9 +651,11 @@ class GoogleProvider(AIProviderBase):
         model_name = self._get_model_name(cfg.model)
         system_text, contents = self._format_messages_for_rest(messages)
 
+        # Security: pass the API key via header, never the URL query string
+        # (keys in URLs leak into proxy/server access logs).
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model_name}:generateContent?key={api_key}"
+            f"{model_name}:generateContent"
         )
         payload = {
             "system_instruction": {"parts": [{"text": system_text}]},
@@ -578,7 +670,12 @@ class GoogleProvider(AIProviderBase):
             try:
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(
-                    url, data=data, headers={"Content-Type": "application/json"}
+                    url,
+                    data=data,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": api_key,
+                    },
                 )
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     resp_json = json.loads(resp.read().decode("utf-8"))
@@ -589,7 +686,15 @@ class GoogleProvider(AIProviderBase):
 
                 parts = candidates[0].get("content", {}).get("parts", [])
                 text = "".join(p.get("text", "") for p in parts)
-                return AIResponse(content=text, model=model_name)
+                usage_meta = resp_json.get("usageMetadata", {}) or {}
+                return AIResponse(
+                    content=text,
+                    model=model_name,
+                    usage={
+                        "prompt_tokens": usage_meta.get("promptTokenCount", 0),
+                        "completion_tokens": usage_meta.get("candidatesTokenCount", 0),
+                    },
+                )
 
             except urllib.error.HTTPError as e:
                 try:
@@ -641,23 +746,138 @@ class GoogleProvider(AIProviderBase):
             logger.info("Using Gemini native REST endpoint (SDK fallback: %s)", e)
             return self._call_rest_api(messages, model_config)
 
+    def _stream_rest_api(
+        self, messages: List[AIMessage], model_config: Optional[ModelConfig] = None
+    ) -> Generator[str, None, None]:
+        """Stream from the Gemini REST endpoint via server-sent events."""
+        api_key = self._get_api_key()
+        if not api_key:
+            yield "\n[Error: Google Gemini API key not configured.]"
+            return
+
+        cfg = model_config or ModelConfig()
+        model_name = self._get_model_name(cfg.model)
+        system_text, contents = self._format_messages_for_rest(messages)
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_name}:streamGenerateContent?alt=sse"
+        )
+        payload = {
+            "system_instruction": {"parts": [{"text": system_text}]},
+            "contents": contents,
+            "generationConfig": {
+                "temperature": cfg.temperature,
+                "maxOutputTokens": cfg.max_tokens,
+            },
+        }
+
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key,
+                },
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                buffer = ""
+                while True:
+                    if self._cancelled:
+                        break
+                    chunk = resp.read(4096)
+                    if not chunk:
+                        break
+                    buffer += chunk.decode("utf-8", errors="replace")
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+                        if not line.startswith("data:"):
+                            continue
+                        data_str = line[len("data:"):].strip()
+                        if not data_str:
+                            continue
+                        try:
+                            obj = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        candidates = obj.get("candidates", [])
+                        if not candidates:
+                            continue
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        text = "".join(p.get("text", "") for p in parts)
+                        if text:
+                            yield text
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = json.loads(e.read().decode("utf-8"))
+                err_msg = err_body.get("error", {}).get("message", str(e))
+            except Exception:
+                err_msg = str(e)
+            logger.error("Gemini REST streaming error: %s", err_msg)
+            yield f"\n[Error: Gemini API error ({e.code}): {err_msg}]"
+        except Exception as e:
+            logger.error("Gemini REST streaming failed: %s", e)
+            yield f"\n[Error: Gemini streaming failed: {e}]"
+
     def send_message_stream(
         self, messages: List[AIMessage], model_config: Optional[ModelConfig] = None
     ) -> Generator[str, None, None]:
+        """Real token streaming: SDK stream first, native REST SSE fallback."""
         self._cancelled = False
-        resp = self.send_message(messages, model_config)
-        if resp.is_error:
-            yield f"\n[Error: {resp.error}]"
-            return
 
-        import time
-        chunks = re.split(r'(\s+)', resp.content)
-        for chunk in chunks:
-            if self._cancelled:
-                break
-            if chunk:
-                yield chunk
-                time.sleep(0.01)
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            genai = None
+
+        if genai is not None and self._get_api_key():
+            genai.configure(api_key=self._get_api_key())
+            cfg = model_config or ModelConfig()
+            model_name = self._get_model_name(cfg.model)
+            model = genai.GenerativeModel(model_name)
+            parts = []
+            for msg in messages:
+                if msg.image_data:
+                    parts.append({
+                        "mime_type": msg.image_mime or "image/png",
+                        "data": msg.image_data,
+                    })
+                if msg.content:
+                    parts.append(msg.content)
+
+            produced = False
+            try:
+                stream = model.generate_content(
+                    parts,
+                    stream=True,
+                    generation_config={
+                        "temperature": cfg.temperature,
+                        "max_output_tokens": cfg.max_tokens,
+                    },
+                )
+                for chunk in stream:
+                    if self._cancelled:
+                        break
+                    try:
+                        text = chunk.text
+                    except Exception:
+                        text = ""
+                    if text:
+                        produced = True
+                        yield text
+                if produced:
+                    return
+            except Exception as e:
+                if produced:
+                    yield f"\n[Error: Gemini stream interrupted: {e}]"
+                    return
+                logger.info(
+                    "Gemini SDK streaming unavailable (%s); using REST SSE", e
+                )
+
+        yield from self._stream_rest_api(messages, model_config)
 
     def get_available_models(self) -> List[str]:
         return [
@@ -669,6 +889,14 @@ class GoogleProvider(AIProviderBase):
 
     def supports_vision(self) -> bool:
         return True
+
+    def capabilities(self) -> Dict[str, Any]:
+        return {
+            "streaming": True,
+            "tools": False,
+            "vision": True,
+            "context_limit": None,
+        }
 
     def cancel(self):
         self._cancelled = True
@@ -726,6 +954,9 @@ class TaskRouter:
             provider = self._providers.get(name)
             if provider is None:
                 continue
+            # Capability-aware routing: vision tasks require vision support.
+            if task == TaskType.VISION and not provider.supports_vision():
+                continue
             try:
                 status = provider.get_status()
             except Exception:
@@ -750,9 +981,14 @@ class ProviderManager:
             "groq": GroqProvider(),
             "omniroute": OmniRouteProvider(),
             "openrouter": OpenRouterProvider(),
+            "ollama": OllamaProvider(),
         }
         self._current_provider_name: str = config.get("ai", "provider", "openai")
         self.routing_enabled: bool = config.get("ai", "dynamic_routing", True)
+        # Free-first policy: when enabled, paid providers are never selected
+        # silently (directive §4.5).
+        self.free_only: bool = config.get("ai", "free_only", False)
+        self._usage_totals: Dict[str, Dict[str, int]] = {}
 
         if persona_manager is None:
             from ai.persona_manager import PersonaManager
@@ -801,6 +1037,22 @@ class ProviderManager:
 
     def get_last_routing(self) -> dict:
         return dict(self._last_routed)
+
+    # -- Usage reporting ---------------------------------------------------
+
+    def _record_usage(self, provider_name: str, usage: Optional[Dict[str, int]]):
+        """Accumulate per-provider usage totals (in-memory, per session)."""
+        totals = self._usage_totals.setdefault(
+            provider_name, {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        )
+        totals["requests"] += 1
+        if usage:
+            totals["prompt_tokens"] += int(usage.get("prompt_tokens", 0) or 0)
+            totals["completion_tokens"] += int(usage.get("completion_tokens", 0) or 0)
+
+    def get_usage_summary(self) -> Dict[str, Dict[str, int]]:
+        """Return per-provider usage totals for the current session."""
+        return {name: dict(totals) for name, totals in self._usage_totals.items()}
 
     # -- Message assembly ------------------------------------------------
 
@@ -876,6 +1128,12 @@ class ProviderManager:
             if status != ProviderStatus.AVAILABLE:
                 last_error = f"{p.get_name()} is not available: {status.value}"
                 continue
+            if self.free_only and getattr(p, "cost_tier", "paid") == "paid":
+                last_error = (
+                    f"{p.get_name()} is a paid provider and free-only mode is "
+                    f"enabled. Disable free-only mode in Settings to use it."
+                )
+                continue
 
             use_cfg = self._config_for(task, name, model_config)
             resp = p.send_message(messages, use_cfg)
@@ -884,7 +1142,9 @@ class ProviderManager:
                     "task": task.value,
                     "provider": name,
                     "model": resp.model or (use_cfg.model if use_cfg else ""),
+                    "cost_tier": getattr(p, "cost_tier", "paid"),
                 }
+                self._record_usage(name, resp.usage)
                 return resp
             last_error = resp.error
             logger.warning("Provider %s failed, trying fallback: %s", name, last_error)
@@ -926,11 +1186,19 @@ class ProviderManager:
                 last_error = f"{p.get_name()} is not available: {status.value}"
                 continue
 
+            if self.free_only and getattr(p, "cost_tier", "paid") == "paid":
+                last_error = (
+                    f"{p.get_name()} is a paid provider and free-only mode is "
+                    f"enabled. Disable free-only mode in Settings to use it."
+                )
+                continue
+
             use_cfg = self._config_for(task, name, model_config)
             self._last_routed = {
                 "task": task.value,
                 "provider": name,
                 "model": use_cfg.model if use_cfg else "",
+                "cost_tier": getattr(p, "cost_tier", "paid"),
             }
 
             produced = False
@@ -938,6 +1206,7 @@ class ProviderManager:
                 produced = True
                 yield chunk
             if produced:
+                self._record_usage(name, None)
                 return
             last_error = f"{p.get_name()} produced no output."
 

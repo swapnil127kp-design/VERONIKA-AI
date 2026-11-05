@@ -47,22 +47,35 @@ class SyncAuth:
         except Exception:
             pass
 
-        # 2) config file fallback
+        # 2) legacy config-file token: migrate to keyring and scrub plaintext
         stored = config.get("sync", "master_token", "")
         if stored:
             self._master_token = stored
+            try:
+                import keyring
+                keyring.set_password(_SERVICE, _ACCOUNT, stored)
+            except Exception:
+                logger.warning(
+                    "Keyring unavailable; legacy sync token kept in memory for "
+                    "this session only and will rotate on next restart"
+                )
+            config.set("sync", "master_token", "")
+            config.save()
+            logger.info("Migrated sync master token from config file to keyring")
             return stored
 
-        # 3) generate a fresh one
+        # 3) generate a fresh one (keyring-only persistence; never written to
+        #    the config file in plaintext)
         token = secrets.token_urlsafe(32)
         self._master_token = token
-        config.set("sync", "master_token", token)
-        config.save()
         try:
             import keyring
             keyring.set_password(_SERVICE, _ACCOUNT, token)
         except Exception:
-            logger.debug("Keyring unavailable; sync token stored in config file")
+            logger.warning(
+                "Keyring unavailable; sync master token is session-only and "
+                "will rotate on next restart (not written to config file)"
+            )
         logger.info("Generated new sync master token")
         return token
 
@@ -112,7 +125,11 @@ class SyncAuth:
     def verify_master_token(self, token: str) -> bool:
         if not token:
             return False
-        return hmac.compare_digest(self.master_token, token)
+        expected = self.master_token
+        if not expected:
+            # Never accept tokens when no master token is configured.
+            return False
+        return hmac.compare_digest(expected, token)
 
     def authenticate(self, token: str) -> Tuple[bool, str]:
         """Accept either the master token or a valid access token.

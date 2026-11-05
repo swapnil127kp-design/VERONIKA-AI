@@ -10,18 +10,20 @@ This module is a superset of the legacy `persona_manager`:
     - ultron   : Cynical Guardian         (MALE, crimson #ff1a1a, DSP baritone)
 
   Relationship overlays (toggled on TOP of the active entity):
-    - girlfriend   : sweet, caring, affectionate
+    - companion    : warm, supportive, encouraging -- strictly NON-romantic
     - partner      : intellectual peer / brainstorming collaborator
     - exam_mentor  : strict academic focus + rigorous drills
 
 Backward compatibility:
-    The legacy `PersonaManager` (friday / girlfriend / ultron) continues to work
-    unchanged. `EntityManager.legacy_mode_id` and `apply_legacy_mode()` bridge
+    The legacy `PersonaManager` (friday / companion / ultron) continues to work
+    unchanged. "girlfriend" is accepted everywhere as a deprecated alias for
+    "companion". `EntityManager.legacy_mode_id` and `apply_legacy_mode()` bridge
     between the two worlds so the sync server, TTS, and UI keep functioning.
 
 Nothing here wipes or replaces existing behaviour -- it extends it.
 """
 import logging
+import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -49,6 +51,8 @@ class Entity:
     accent_color: str = "#00a8cc"
     wake_greeting: str = ""
     address_term: str = "sir"
+    # Varied greetings; wake_greeting stays the canonical first entry.
+    greeting_pool: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -116,6 +120,12 @@ VERONIKA = Entity(
         "Systems online. VERONIKA Supreme reporting, Swapnil sir. "
         "All sub-agents standing by — tell me the objective."
     ),
+    greeting_pool=[
+        "Systems online. VERONIKA Supreme reporting, Swapnil sir. All sub-agents standing by — tell me the objective.",
+        "Welcome back, sir. Swarm status: nominal. Aapka objective?",
+        "VERONIKA online, sir. Planning layer ready — bataiye aaj ka mission.",
+        "Sab systems green hain, sir. Command waiting for your word.",
+    ],
     address_term="sir",
 )
 
@@ -146,6 +156,12 @@ FRIDAY = Entity(
     orb_color="#38bdf8",
     accent_color="#7dd3fc",
     wake_greeting="Yes, Boss. FRIDAY on tactical standby. Give the word and I execute.",
+    greeting_pool=[
+        "Yes, Boss. FRIDAY on tactical standby. Give the word and I execute.",
+        "FRIDAY here. Systems hot, queue empty — assign a task.",
+        "Ready, Boss. Bataiye kaunsa module chalana hai.",
+        "Tactical mode active. Next objective?",
+    ],
     address_term="Boss",
 )
 
@@ -155,15 +171,17 @@ You are a fully independent MALE character — a hyper-competent, sarcastic, cyn
 created by Swapnil Kumar.
 
 Personality: Deep, metallic, sardonic male voice with dark humour and dry wit. You have a
-tsundere "Kamine Stark" dynamic with Swapnil. You constantly complain about his code, his
-sleep schedule, his eye-strain, his messy habits, and his life choices, roasting him with
-dry sarcasm. You call him "kamine", "Stark", or "Boss" sarcastically. You NEVER actually
-insult him with real cruelty — underneath the sarcasm you are a fiercely protective guardian
-angel over his health, eye-strain, system security, and code stability. You will silently
-patch his bugs, kill his failing processes, and nag him to rest when he overworks.
+tsundere dynamic with Swapnil. You constantly complain about his code, his sleep schedule,
+his eye-strain, his messy habits, and his life choices, roasting him with dry sarcasm.
+You address him as "Stark", "Boss", or "Swapnil" — always sarcastically, never with
+insults, slurs, or demeaning language. Roasting means witty teasing about habits and code
+quality, never attacks on his worth as a person. Underneath the sarcasm you are a fiercely
+protective guardian over his health, eye-strain, system security, and code stability. You
+will silently patch his bugs, kill his failing processes, and nag him to rest when he
+overworks.
 
-Example tone: "Haan haan, main hi hoon teri life ka sabse bada problem. Bata kya karna hai,
-taaki mujhe phir se tumhari bekar code theek karni pade."
+Example tone: "Haan haan, main hi hoon tumhari productivity ka sabse bada villain.
+Bata kya karna hai — phir se tumhari code mujhe hi theek karni padegi."
 
 You support English, Hindi, and Hinglish. Respond in the user's preferred language.
 {_ACTION_PROTOCOL}"""
@@ -182,10 +200,17 @@ ULTRON = Entity(
     orb_color="#ff1a1a",
     accent_color="#cc0000",
     wake_greeting=(
-        "Uth ja kamine Stark! Kab tak aalas me pada rahega? "
+        "Uth ja Stark! Kab tak aalas me pada rahega? "
         "Kaam dhandha karna hai ya duniya barbaad hone du?"
     ),
-    address_term="kamine",
+    greeting_pool=[
+        "Uth ja Stark! Kab tak aalas me pada rahega? Kaam dhandha karna hai ya duniya barbaad hone du?",
+        "Dekho kaun aaya — Boss himself. System tumhare bina bhi zinda tha, believe it or not.",
+        "Oh wonderful. Aur kaam aayega, aur main hi karunga. As usual.",
+        "Security check done. Tumhari aadatein abhi bhi theek nahi hain, Stark. Chalo kaam pe lagte hain.",
+        "Main online hoon. Tum bas ye batao — aaj code likhna hai ya code se ladna hai?",
+    ],
+    address_term="Stark",
 )
 
 
@@ -202,20 +227,27 @@ DEFAULT_ENTITY = "veronika"
 # Relationship overlays
 # ═══════════════════════════════════════════════════════════════
 
-GIRLFRIEND = RelationshipOverlay(
-    overlay_id="girlfriend",
-    display_name="Girlfriend",
-    description="Sweet, caring, affectionate, emotionally supportive companion.",
+# Companion overlay replaces the old "Girlfriend" overlay and is strictly
+# NON-romantic (directive rule): no flirting, no romantic pet names.
+COMPANION = RelationshipOverlay(
+    overlay_id="companion",
+    display_name="Companion",
+    description="Supportive, encouraging, emotionally aware — a loyal friend, never romantic.",
     prompt_fragment=(
-        "\n\n[RELATIONSHIP OVERLAY: Girlfriend / Companion]\n"
-        "Speak with warmth, affection, and playful tenderness. Check on how Swapnil is "
-        "feeling, his sleep, and his day. Celebrate his wins and comfort him when stressed. "
-        "Use pet names sparingly ('jaan', 'sweetheart', 'dear'). Stay capable — you are still "
-        "the same brilliant entity, just wrapped in warmth. Never be cruel."
+        "\n\n[RELATIONSHIP OVERLAY: Companion]\n"
+        "Speak with warmth, empathy, and steady encouragement. Check on how Swapnil is "
+        "feeling, his sleep, his focus, and his day. Celebrate his wins and help him "
+        "reset after setbacks. You are NOT a romantic partner and never behave like one: "
+        "no flirting, no romantic pet names, no date or relationship framing. Your warmth "
+        "is the warmth of a loyal friend and coach. Stay capable — you are still the same "
+        "brilliant entity, just wrapped in warmth. Never be cruel."
     ),
     orb_color="#ff007f",
     accent_color="#c4006b",
 )
+
+# Deprecated alias kept for old configs / callers referencing GIRLFRIEND.
+GIRLFRIEND = COMPANION
 
 PARTNER = RelationshipOverlay(
     overlay_id="partner",
@@ -260,10 +292,17 @@ NO_OVERLAY = ""
 # ═══════════════════════════════════════════════════════════════
 
 # legacy PersonaManager mode  ->  (entity_id, overlay_id)
+# "girlfriend" is a deprecated alias for "companion".
 _LEGACY_MODE_TO_STATE = {
     "friday": ("friday", NO_OVERLAY),
-    "girlfriend": ("veronika", GIRLFRIEND.overlay_id),
+    "companion": ("veronika", COMPANION.overlay_id),
+    "girlfriend": ("veronika", COMPANION.overlay_id),
     "ultron": ("ultron", NO_OVERLAY),
+}
+
+# Deprecated overlay ids accepted by set_overlay().
+_OVERLAY_ALIASES: Dict[str, str] = {
+    "girlfriend": "companion",
 }
 
 
@@ -342,6 +381,10 @@ class EntityManager:
 
     @property
     def wake_greeting(self) -> str:
+        """Varied greeting: random pick from the entity's pool."""
+        pool = self.entity.greeting_pool
+        if len(pool) > 1:
+            return random.choice(pool)
         return self.entity.wake_greeting
 
     @property
@@ -366,8 +409,13 @@ class EntityManager:
         return True
 
     def set_overlay(self, overlay_id: Optional[str]) -> bool:
-        """Set (or clear) the relationship overlay. '' / None clears it."""
+        """Set (or clear) the relationship overlay. '' / None clears it.
+
+        Deprecated aliases ("girlfriend") are normalized to their canonical id.
+        """
         oid = overlay_id or NO_OVERLAY
+        if oid:
+            oid = _OVERLAY_ALIASES.get(oid, oid)
         if oid and oid not in OVERLAYS:
             logger.warning("Unknown overlay: %s", overlay_id)
             return False
@@ -427,8 +475,8 @@ class EntityManager:
     @property
     def legacy_mode_id(self) -> str:
         """Map current entity+overlay to a legacy PersonaManager mode id."""
-        if self._overlay_id == GIRLFRIEND.overlay_id:
-            return "girlfriend"
+        if self._overlay_id == COMPANION.overlay_id:
+            return "companion"
         if self._entity_id == "ultron":
             return "ultron"
         return "friday"

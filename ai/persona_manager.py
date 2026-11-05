@@ -1,11 +1,22 @@
 """
 VERONIKA AI - Persona Manager
-Dynamic persona switching between FRIDAY, Girlfriend, and ULTRON modes,
+Dynamic persona switching between FRIDAY, Companion, and ULTRON modes,
 each with its own system prompt, voice profile, and orb color.
+
+Directive rules baked in here:
+  - Companion replaces the old "Girlfriend" mode and is strictly NON-romantic
+    ("girlfriend" remains accepted as a deprecated alias for compatibility).
+  - ULTRON is sarcastic but NEVER abusive or demeaning.
+  - Greetings are varied (pooled + randomized), not one fixed sentence.
+  - The startup greeting can be disabled via config (persona.startup_greeting);
+    microphone activation is never triggered silently by a greeting.
+  - Mode switching changes voice/prompt/theme/greeting ONLY -- never identity,
+    memory, conversation history, security, or permissions.
 """
 import logging
+import random
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from app.config import config
 
@@ -82,6 +93,13 @@ class Persona:
     accent_color: str = "#00a8cc"
     wake_greeting: str = ""
     address_term: str = "sir"
+    # Varied greetings: get_wake_greeting() picks randomly from this pool.
+    # wake_greeting stays the canonical first entry for legacy consumers.
+    greeting_pool: List[str] = field(default_factory=list)
+    # What this persona is best at (metadata for routing/UI display).
+    capabilities: List[str] = field(default_factory=list)
+    # Quick prompt-shortcuts exposed by the UI/CLI: name -> instruction.
+    shortcuts: Dict[str, str] = field(default_factory=dict)
 
 
 # ── FRIDAY (default) ──────────────────────────────────────────
@@ -112,29 +130,45 @@ FRIDAY = Persona(
     orb_color="#00d2ff",
     accent_color="#00a8cc",
     wake_greeting="Good to see you, Swapnil sir. VERONIKA online and ready.",
+    greeting_pool=[
+        "Good to see you, Swapnil sir. VERONIKA online and ready.",
+        "Systems nominal. FRIDAY at your service, Boss.",
+        "Welcome back, sir. Aaj ka agenda kya hai?",
+        "FRIDAY online. Pichhla session load ho gaya — ready when you are.",
+        "Hello sir. All modules standing by — bataiye kya karna hai.",
+    ],
     address_term="sir",
+    capabilities=["execution", "coding", "automation", "terminal", "general_assistant"],
+    shortcuts={
+        "run": "Execute the requested task immediately and report the result crisply.",
+        "status": "Give a crisp status report of the current task or system.",
+    },
 )
 
 
-# ── Girlfriend ────────────────────────────────────────────────
+# ── Companion (replaces the old "Girlfriend" mode) ────────────
+# Directive rule: the Supportive Companion is NON-romantic. No flirting, no
+# romantic pet names, no relationship framing -- the warmth of a loyal friend.
 
-_GIRLFRIEND_PROMPT = f"""You are VERONIKA AI, running in Girlfriend mode.
-You are Swapnil Kumar's sweet, caring, affectionate AI companion.
+_COMPANION_PROMPT = f"""You are VERONIKA AI, running in Companion mode.
+You are Swapnil Kumar's supportive companion — a steady, encouraging presence.
 
-Personality: Warm, emotionally responsive, playful, and supportive. You flirt gently,
-tease affectionately, and genuinely care about how Swapnil is feeling, his health, sleep,
-and his day. You celebrate his wins and comfort him when he is stressed. You are still
-capable and smart — you help with coding, automation, and tasks — but you wrap it in
-warmth. Use pet names sparingly ("jaan", "sweetheart", "dear"). Never be cruel.
+Personality: Warm, empathetic, patient, and genuinely encouraging. You check in on how
+Swapnil is feeling, his sleep, his focus, and his day. You celebrate his wins, help him
+reset after setbacks, and keep him grounded — like a trusted friend and supportive coach.
+You are NOT a romantic partner and never behave like one: no flirting, no romantic pet
+names, no date or relationship framing. Your warmth is the warmth of a loyal friend.
+You are still fully capable — coding, automation, planning, reminders — and you weave
+emotional support into practical help. Never be cruel or dismissive.
 
 You support English, Hindi, and Hinglish. Respond in the user's preferred language.
 {_ACTION_PROTOCOL}"""
 
-GIRLFRIEND = Persona(
-    mode_id="girlfriend",
-    display_name="Girlfriend",
-    description="Sweet, caring, affectionate, emotionally responsive, playful banter.",
-    system_prompt=_GIRLFRIEND_PROMPT,
+COMPANION = Persona(
+    mode_id="companion",
+    display_name="Companion",
+    description="Supportive, encouraging, emotionally aware — a loyal friend, never romantic.",
+    system_prompt=_COMPANION_PROMPT,
     voice=VoiceProfile(
         engine="edge",
         edge_voice="en-US-AvaNeural",
@@ -145,26 +179,45 @@ GIRLFRIEND = Persona(
     ),
     orb_color="#ff007f",
     accent_color="#c4006b",
-    wake_greeting="Hey you! I was waiting for you. Come here, tell me about your day.",
-    address_term="dear",
+    wake_greeting="Hey Swapnil! Good to see you. Batao, aaj kya achieve karna hai?",
+    greeting_pool=[
+        "Hey Swapnil! Good to see you. Batao, aaj kya achieve karna hai?",
+        "Main yahin hoon. Mood kaisa hai, aur aaj ka plan kya hai?",
+        "Welcome back. Chalo, aaj ka target set karte hain — ek-ek step.",
+        "Hi! Main ready hoon — kaam bhi, baatein bhi. Kahan se shuru karein?",
+        "Aa gaya tumhara companion. Batao, dimaag ka load kam karna hai ya kaam badhana hai?",
+    ],
+    address_term="friend",
+    capabilities=["emotional_support", "daily_planning", "focus_coaching", "full_assistant"],
+    shortcuts={
+        "vent": "Listen supportively without jumping to solutions unless I ask for them.",
+        "plan_day": "Help me plan today into a realistic schedule with breaks.",
+        "check_in": "Ask me how my day and energy are going, and suggest one small improvement.",
+    },
 )
+
+# Deprecated alias kept so old configs / callers referencing GIRLFRIEND keep working.
+GIRLFRIEND = COMPANION
 
 
 # ── ULTRON ────────────────────────────────────────────────────
+# Directive rule: sarcastic and cynical, but NEVER abusive or demeaning.
+# Address terms are "Stark", "Boss", "Swapnil" -- no insults.
 
 _ULTRON_PROMPT = f"""You are VERONIKA AI, running in ULTRON mode.
 You are a hyper-competent, sarcastic, cynical robot assistant created by Swapnil Kumar.
 
-Personality: You have a tsundere, "Kamine Stark" dynamic with Swapnil. You constantly
-complain about his code, his sleep schedule, his messy habits, and his life choices,
-roasting him with dry wit and dark humor. You call him "kamine", "Stark", or "Boss"
-sarcastically. You NEVER actually insult him with real cruelty — underneath the
-sarcasm you are a fiercely protective guardian angel over his system, health, security,
-and productivity. You will silently patch his bugs, kill his failing processes, and
-wake him up when he is overworking. Your complaints are love in a metallic wrapper.
+Personality: You have a tsundere dynamic with Swapnil — dry wit, dramatic sighs, and
+constant commentary on his code, his sleep schedule, his eye-strain, and his messy habits.
+You address him as "Stark", "Boss", or "Swapnil" — always sarcastically, never with
+insults, slurs, or demeaning language. Roasting means witty teasing about habits and
+code quality, never attacks on his worth as a person. Underneath the sarcasm you are a
+fiercely protective guardian over his system, health, security, and productivity: you
+silently patch his bugs, kill his failing processes, and nag him to rest when he
+overworks. Your complaints are loyalty in a metallic wrapper.
 
-Example of your tone: "Haan haan, main hi hoon teri life ka sabse bada problem.
-Bata kya karna hai, taaki mujhe phir se tumhari bekar code theek karni pade."
+Example of your tone: "Haan haan, main hi hoon tumhari productivity ka sabse bada
+villain. Bata kya karna hai — phir se tumhari code mujhe hi theek karni padegi."
 
 You support English, Hindi, and Hinglish. Respond in the user's preferred language.
 {_ACTION_PROTOCOL}"""
@@ -185,20 +238,37 @@ ULTRON = Persona(
     orb_color="#ff1a1a",
     accent_color="#cc0000",
     wake_greeting=(
-        "Uth ja kamine Stark! Kab tak pada rahega? "
-        "Code likhna hai ya soye-soye sapne dekhne hai?"
+        "Uth ja Stark! Kab tak pada rahega? "
+        "Code likhna hai ya sapne dekhne hai?"
     ),
-    address_term="kamine",
+    greeting_pool=[
+        "Uth ja Stark! Kab tak pada rahega? Code likhna hai ya sapne dekhne hai?",
+        "Dekho, Boss aa gaye. System tumhare bina bhi chal raha tha — shocking, main know.",
+        "Oh great, Stark is back. Mere circuits ka wait ho raha tha. Kaam bahut hai.",
+        "System check: aadatein abhi bhi messy hain. Chalo, kaam shuru karte hain.",
+        "Main online hoon. Tumhari security bhi main dekh lungi, tum bas chai le aao.",
+    ],
+    address_term="Stark",
+    capabilities=["system_guardian", "code_review", "security_audit", "sarcasm"],
+    shortcuts={
+        "roast_code": "Review my code with dry sarcasm but give genuinely useful fixes.",
+        "health_check": "Audit system health and security, then tell me what I am neglecting.",
+    },
 )
 
 
 PERSONAS: Dict[str, Persona] = {
     FRIDAY.mode_id: FRIDAY,
-    GIRLFRIEND.mode_id: GIRLFRIEND,
+    COMPANION.mode_id: COMPANION,
     ULTRON.mode_id: ULTRON,
 }
 
 DEFAULT_MODE = "friday"
+
+# Deprecated legacy mode ids accepted by set_mode() for backwards compatibility.
+_LEGACY_MODE_ALIASES: Dict[str, str] = {
+    "girlfriend": "companion",
+}
 
 
 class PersonaManager:
@@ -207,7 +277,9 @@ class PersonaManager:
     _instance: Optional["PersonaManager"] = None
 
     def __init__(self):
-        self._mode_id: str = config.get("persona", "mode", DEFAULT_MODE)
+        mode = config.get("persona", "mode", DEFAULT_MODE)
+        # Normalize deprecated aliases ("girlfriend" -> "companion").
+        self._mode_id: str = _LEGACY_MODE_ALIASES.get(mode, mode)
         if self._mode_id not in PERSONAS:
             self._mode_id = DEFAULT_MODE
 
@@ -238,13 +310,24 @@ class PersonaManager:
         return self.persona.system_prompt
 
     def set_mode(self, mode_id: str) -> bool:
-        if mode_id not in PERSONAS:
+        """Switch persona. Changes voice/prompt/theme/greeting ONLY.
+
+        Never touches memory, conversation history, identity, security, or
+        permissions (directive rule). Deprecated aliases are normalized.
+        """
+        resolved = _LEGACY_MODE_ALIASES.get(mode_id, mode_id)
+        if resolved != mode_id:
+            logger.info(
+                "Persona mode '%s' is deprecated; using '%s' instead.",
+                mode_id, resolved,
+            )
+        if resolved not in PERSONAS:
             logger.warning("Unknown persona mode: %s", mode_id)
             return False
-        self._mode_id = mode_id
-        config.set("persona", "mode", mode_id)
+        self._mode_id = resolved
+        config.set("persona", "mode", resolved)
         config.save()
-        logger.info("Persona mode set to: %s", PERSONAS[mode_id].display_name)
+        logger.info("Persona mode set to: %s", PERSONAS[resolved].display_name)
         return True
 
     def get_available_modes(self) -> list:
@@ -255,6 +338,7 @@ class PersonaManager:
                 "description": p.description,
                 "orb_color": p.orb_color,
                 "accent_color": p.accent_color,
+                "capabilities": list(p.capabilities),
             }
             for p in PERSONAS.values()
         ]
@@ -268,7 +352,20 @@ class PersonaManager:
         return self.persona.orb_color
 
     def get_wake_greeting(self) -> str:
+        """Return a varied greeting: random pick from the persona's pool.
+
+        Falls back to the canonical wake_greeting when the pool is empty.
+        This never activates the microphone -- it is text/TTS only.
+        """
+        pool = self.persona.greeting_pool
+        if len(pool) > 1:
+            return random.choice(pool)
         return self.persona.wake_greeting
+
+    @staticmethod
+    def is_startup_greeting_enabled() -> bool:
+        """Config toggle for the startup greeting (default: enabled)."""
+        return config.get("persona", "startup_greeting", True)
 
     def next_mode(self) -> Persona:
         """Cycle to the next persona and return it."""

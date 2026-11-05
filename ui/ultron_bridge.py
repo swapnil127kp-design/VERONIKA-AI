@@ -35,9 +35,12 @@ _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _ACTIVE_WS_PORT = 8766
 
 # VERONIKA entity/persona -> orb mode names
+# "companion" maps to the orb's GIRLFRIEND palette (same pink visuals) until
+# the orb asset itself is relabeled; "girlfriend" stays as a deprecated alias.
 _PERSONA_TO_ORB = {
     "veronika": "VERONIKA",
     "friday": "FRIDAY",
+    "companion": "GIRLFRIEND",
     "girlfriend": "GIRLFRIEND",
     "ultron": "ULTRON",
     "partner": "PARTNER",
