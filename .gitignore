@@ -35,3 +35,7 @@ cache/
 htmlcov/
 .coverage
 .coverage.*
+
+# Voice models (large binaries - see voice/models/README.md for sources)
+voice/models/*
+!voice/models/README.md

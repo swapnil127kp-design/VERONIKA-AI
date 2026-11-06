@@ -267,6 +267,23 @@ class SettingsWindow(QDialog):
         privacy_note.setStyleSheet(f"color: {Colors.TEXT_SECONDARY.name()}; font-size: 11px;")
         g_layout.addWidget(privacy_note)
 
+        self._cloud_fallback_check = QCheckBox(
+            "Fall back to Google for languages the local Vosk model can't hear"
+        )
+        self._cloud_fallback_check.setChecked(
+            config.get("voice", "allow_cloud_fallback", False)
+        )
+        g_layout.addWidget(self._cloud_fallback_check)
+
+        fallback_note = QLabel(
+            "🔒 With cloud fallback OFF, requests in unsupported languages are "
+            "blocked with an explanation instead of silently uploading audio "
+            "(Hindi needs the vosk-model-small-hi model - see voice/models/README.md)."
+        )
+        fallback_note.setWordWrap(True)
+        fallback_note.setStyleSheet(f"color: {Colors.TEXT_SECONDARY.name()}; font-size: 11px;")
+        g_layout.addWidget(fallback_note)
+
         self._barge_in_check = QCheckBox(
             "Allow voice interruption (barge-in) while VERONIKA speaks"
         )
@@ -493,6 +510,7 @@ class SettingsWindow(QDialog):
         if engine_data:
             config.set("voice", "stt_engine", engine_data)
         config.set("voice", "barge_in_enabled", self._barge_in_check.isChecked())
+        config.set("voice", "allow_cloud_fallback", self._cloud_fallback_check.isChecked())
 
         # Wake word
         config.set("wake_word", "enabled", self._wake_check.isChecked())

@@ -27,8 +27,14 @@ Audit performed per Continuity Engine §15 (docs vs. git vs. actual code). Corre
 4. **Wake-word fixes**: Picovoice env key now promoted into the credential store (keyring "never written" bug), `stop()` joins instead of foreign-thread deletion, `start()` refuses while a loop is alive, Porcupine loop teardown in `finally` (no stream leak on exceptions).
 5. **Push approved** — 5 commits synced with origin (verified `origin/main..main` empty after fetch).
 
+### Phase 5 Day 3 — COMPLETED this session (2026-11-06)
+1. **Hindi offline STT**: `vosk-model-small-hi-0.22` (~45 MB, free, alphacephei.com) downloaded to `voice/models/` and verified loading. Real-accuracy check = manual (Day 4).
+2. **Multi-language models** (`voice/stt_vosk.py`): `resolve_model_for_language()` scans local models by language prefix and layout (`am/` required); `transcribe_wav(language="hi-IN")` now uses the Hindi model; process-wide `_MODEL_CACHE` loads each 45-70 MB model once per run (suite 206 s → ~45 s for voice tests).
+3. **Cloud-fallback gate (privacy)**: `vosk_local` + unsupported language + fallback OFF (default) = request blocked with an explanatory error; ON = explicit switch to Google with log. Settings toggle `voice.allow_cloud_fallback`.
+4. **Repo hygiene**: `voice/models/*` gitignored (68 MB model had been committed); `voice/models/README.md` documents sources/layout; Hindi model NOT in git.
+
 ### Test result (VERIFIED 2026-11-06)
-`pytest tests -q` → **289 passed, 2 skipped** (2 = manual mic + human-speech integration tests), 23.58 s. Baseline was 280; staged voice suite = 11 tests (9 auto + 2 manual skips). Added `pytest.ini` to register the `integration` marker (removes PytestUnknownMarkWarning).
+`pytest tests -q` → **311 passed, 2 skipped** (2 = manual mic + human-speech integration tests), ~207 s full suite (new language tests load real Vosk models once each; voice-only subset ≈45 s). Latest run (Day 3) supersedes the earlier 289/297 counts recorded today. Added `pytest.ini` to register the `integration` marker (removes PytestUnknownMarkWarning).
 
 ### Resource audit (new owner-supplied resource)
 - **MYRAA V2** (`MYRAA MOBILE\mayra android`): separate Electron/React/Three.js + PMX anime-character assistant with a **native Android port** (provider networking, Keystore auth, STT+TTS, standalone operation). Registered as Resource D in `RESOURCE_INTEGRATION_MAP.md` §5; license not yet verified; **deep audit scheduled** — Android modules first. Nothing copied from it yet.

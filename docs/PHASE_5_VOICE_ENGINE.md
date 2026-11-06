@@ -365,6 +365,35 @@ Phase 5 is **COMPLETE** when:
 
 ---
 
+# DAY 3 (2026-11-06) - COMPLETED
+
+## 1. Hindi offline STT (new model installed)
+- Downloaded the free `vosk-model-small-hi-0.22` (~45 MB, alphacephei.com) into `voice/models/` and verified it loads ("Hindi Vosk model LOADS OK").
+- "Hindi evaluation" note: automated tests cover Hindi MODEL resolution and wiring (silence audio gives empty text - by design). Real-word accuracy needs a human speaking Hindi (same pattern as the manual mic tests).
+
+## 2. Multi-language model resolution (`voice/stt_vosk.py`)
+- `resolve_model_for_language(language, models_root=None)`: scans `voice/models/` for usable model dirs (needs `am/` subdirectory), matches language prefix (`vosk-model-small-hi*`/`vosk-model-hi*` for Hindi, `vosk-model-en*`/`vosk-model-small-en*` for English); broken dirs (no `am/`) are skipped; English keeps the Part 7 development fallback.
+- `VoskSTT.transcribe_wav(language=...)` now loads a Hindi model for `hi*` instead of silently running Hindi audio through the English model.
+- Shared `_MODEL_CACHE` (process-wide, keyed by model path): model binaries are 45-70 MB, so they load once per process instead of once per request (also cut the test suite from 206 s back down).
+
+## 3. Cloud-fallback gate (privacy) (`voice/speech_recognition.py`)
+- Non-English request with `vosk_local` and no matching local model is GATED, not silently routed to Google:
+  - `voice.allow_cloud_fallback` OFF (default): request stops with a clear error (no audio leaves the machine).
+  - ON: `_decide_engine` switches to `google_free` explicitly with an info log.
+- Settings > Voice: new checkbox "Fall back to Google for languages the local Vosk model can't hear" + privacy note.
+
+## 4. Repo hygiene
+- `voice/models/*` gitignored (the 68 MB English model had been committed to git); `voice/models/README.md` documents model sources, layout requirements, and the acquisition commands. Disk files untouched.
+
+## 5. Test evidence
+- New `tests/test_language_models.py`: 14 tests (resolution root/broken-dir/prefix logic, Hindi model loading + cache, engine gate on/off-consent, English passthrough).
+- Full suite: **311 passed, 2 skipped** (was 297), voice tests down to 45 s thanks to `_MODEL_CACHE`.
+
+## 6. Remaining for Phase 5
+- Day 4: end-to-end voice conversation verification (manual), Hindi accuracy listening (manual), documentation final pass.
+
+---
+
 ## NEXT ACTIONS
 
 **Immediate (Next 1 Hour):**
@@ -377,14 +406,18 @@ Phase 5 is **COMPLETE** when:
 5. Integrate with speech_recognition.py - DONE (previous session)
 6. Privacy toggle / engine selector UI - DONE
 7. Basic UI integration (mic button, level meter, cancel) - DONE
-8. Unit tests - DONE (297 passing)
+8. Unit tests - DONE
 9. UI polish - DONE
 10. Barge-in - DONE
 11. Wake word keyring fix - DONE
 
-**Next (Day 3):**
-12. Evaluate Hindi/Hinglish STT
-13. Performance tuning
+**Completed 2026-11-06 (Day 3):**
+12. Hindi/Hinglish: Hindi offline model installed + multi-language resolution - DONE (accuracy listening = manual, Day 4)
+13. Performance: shared model cache (model loads once per process) - DONE
+
+**Next (Day 4):**
+14. End-to-end voice conversation verification (manual)
+15. Documentation final pass
 
 ---
 

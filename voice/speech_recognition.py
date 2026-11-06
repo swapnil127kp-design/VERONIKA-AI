@@ -50,6 +50,35 @@ class SpeechRecognizer:
         from app.config import config
         return config.get("voice", "stt_engine", "google_free")
 
+    def _decide_engine(self, language: str):
+        """
+        Resolve the STT engine for a request. Returns (engine, gate_error).
+
+        gate_error is set (and engine stays vosk_local) when no local Vosk
+        model can hear the requested language and voice.allow_cloud_fallback
+        is off: the audio must NOT silently go to the Google cloud engine.
+        The caller shows the gate_error and stops listening instead.
+        """
+        engine = self._active_engine()
+        if engine != "vosk_local":
+            return engine, None
+        lang = (language or "en-US").lower()
+        from voice.stt_vosk import resolve_model_for_language
+        if lang.startswith("en") or resolve_model_for_language(language):
+            return engine, None
+        from app.config import config
+        if config.get("voice", "allow_cloud_fallback", False):
+            logger.info(
+                "No local Vosk model for %s; using Google STT "
+                "(voice.allow_cloud_fallback is enabled).", language,
+            )
+            return "google_free", None
+        return engine, (
+            f"No local Vosk model for {language}. Choose the Google engine in "
+            "Settings > Voice, enable cloud fallback in settings, or install a "
+            "Vosk model for this language (voice/models/README.md)."
+        )
+
     def recognize_speech(
         self,
         language: str = "en-US",
@@ -64,7 +93,8 @@ class SpeechRecognizer:
         """
         Start listening for speech in a background thread.
         Calls on_result with recognized text or on_error with error message.
-        The engine is chosen by config (voice.stt_engine).
+        The engine is chosen by config (voice.stt_engine); when vosk_local has
+        no model for `language`, the request is gated (see _decide_engine).
         on_level callback receives RMS level (0.0 to 1.0) during recording.
         """
         if self._is_listening:
@@ -73,7 +103,12 @@ class SpeechRecognizer:
             return
 
         self._cancel_flag.clear()
-        engine = self._active_engine()
+        engine, gate_error = self._decide_engine(language)
+        if gate_error:
+            logger.warning("STT request gated: %s", gate_error)
+            if on_error:
+                on_error(gate_error)
+            return
         worker = self._listen_vosk if engine == "vosk_local" else self._listen_google
         self._listen_thread = threading.Thread(
             target=worker,
