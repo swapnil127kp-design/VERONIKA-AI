@@ -5,7 +5,7 @@ Conversation interface with message history and input.
 import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QLabel,
-    QLineEdit, QFrame, QSizePolicy,
+    QLineEdit, QFrame, QSizePolicy, QProgressBar,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont, QKeyEvent
@@ -54,12 +54,15 @@ class ChatInput(QLineEdit):
 
 
 class ChatPanel(QWidget):
-    """Main chat conversation panel."""
+    """Main chat conversation panel with voice controls."""
 
     message_sent = Signal(str)
+    voice_button_clicked = Signal()  # Emitted when mic button clicked
+    voice_cancel_clicked = Signal()  # Emitted when cancel button clicked
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._is_recording = False
         self._setup_ui()
 
     def _setup_ui(self):
@@ -102,9 +105,15 @@ class ChatPanel(QWidget):
 
         # Input area
         input_container = QWidget()
-        input_layout = QHBoxLayout(input_container)
+        input_layout = QVBoxLayout(input_container)
         input_layout.setContentsMargins(12, 8, 12, 12)
-        input_layout.setSpacing(8)
+        input_layout.setSpacing(6)
+
+        # Text input row
+        text_row = QWidget()
+        text_layout = QHBoxLayout(text_row)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(8)
 
         self._input = ChatInput()
         self._input.submitted.connect(self._on_submit)
@@ -113,8 +122,67 @@ class ChatPanel(QWidget):
         self._send_btn.setFixedWidth(70)
         self._send_btn.clicked.connect(lambda: self._on_submit(self._input.text().strip()))
 
-        input_layout.addWidget(self._input, 1)
-        input_layout.addWidget(self._send_btn)
+        text_layout.addWidget(self._input, 1)
+        text_layout.addWidget(self._send_btn)
+
+        # Voice controls row
+        voice_row = QWidget()
+        voice_layout = QHBoxLayout(voice_row)
+        voice_layout.setContentsMargins(0, 0, 0, 0)
+        voice_layout.setSpacing(8)
+
+        # Microphone button
+        self._mic_btn = CyberButton("🎤 Voice")
+        self._mic_btn.setFixedWidth(100)
+        self._mic_btn.clicked.connect(self._on_mic_clicked)
+
+        # Recording indicator and status
+        self._recording_label = QLabel("")
+        self._recording_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY.name()};
+                font-size: 13px;
+                padding: 0 8px;
+            }}
+        """)
+        self._recording_label.hide()
+
+        # Level meter (shows RMS during recording)
+        self._level_meter = QProgressBar()
+        self._level_meter.setRange(0, 100)
+        self._level_meter.setValue(0)
+        self._level_meter.setTextVisible(False)
+        self._level_meter.setFixedHeight(6)
+        self._level_meter.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: rgba(22, 22, 32, 180);
+                border: 1px solid rgba(50, 55, 70, 100);
+                border-radius: 3px;
+            }}
+            QProgressBar::chunk {{
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {Colors.CYAN.name()},
+                    stop:0.5 {Colors.GREEN.name()},
+                    stop:1 {Colors.ORANGE.name()});
+                border-radius: 2px;
+            }}
+        """)
+        self._level_meter.hide()
+
+        # Cancel button (shown during recording)
+        self._cancel_btn = CyberButton("Cancel")
+        self._cancel_btn.setFixedWidth(80)
+        self._cancel_btn.clicked.connect(self._on_cancel_clicked)
+        self._cancel_btn.hide()
+
+        voice_layout.addWidget(self._mic_btn)
+        voice_layout.addWidget(self._recording_label)
+        voice_layout.addWidget(self._level_meter, 1)
+        voice_layout.addWidget(self._cancel_btn)
+        voice_layout.addStretch()
+
+        input_layout.addWidget(text_row)
+        input_layout.addWidget(voice_row)
 
         layout.addWidget(input_container)
 
@@ -122,6 +190,59 @@ class ChatPanel(QWidget):
         if text:
             self._input.clear()
             self.message_sent.emit(text)
+
+    def _on_mic_clicked(self):
+        """Handle microphone button click."""
+        self.voice_button_clicked.emit()
+
+    def _on_cancel_clicked(self):
+        """Handle cancel button click during recording."""
+        self.voice_cancel_clicked.emit()
+
+    def set_recording_state(self, is_recording: bool, status_text: str = ""):
+        """Update UI to show recording state."""
+        self._is_recording = is_recording
+
+        if is_recording:
+            self._mic_btn.setText("⏺ Recording")
+            self._mic_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgba(255, 70, 80, 200);
+                    color: white;
+                    border: 1px solid rgba(255, 100, 100, 150);
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    font-size: 13px;
+                    font-weight: 600;
+                }}
+                QPushButton:hover {{
+                    background-color: rgba(255, 90, 100, 220);
+                }}
+            """)
+            self._recording_label.setText(status_text or "Listening...")
+            self._recording_label.show()
+            self._level_meter.show()
+            self._cancel_btn.show()
+            self._input.setEnabled(False)
+            self._send_btn.setEnabled(False)
+        else:
+            self._mic_btn.setText("🎤 Voice")
+            self._mic_btn.setStyleSheet("")  # Reset to default CyberButton style
+            self._recording_label.hide()
+            self._level_meter.hide()
+            self._level_meter.setValue(0)
+            self._cancel_btn.hide()
+            self._input.setEnabled(True)
+            self._send_btn.setEnabled(True)
+
+    def update_recording_level(self, level: float):
+        """Update the level meter during recording (0.0 to 1.0)."""
+        if self._is_recording:
+            self._level_meter.setValue(int(level * 100))
+
+    def update_recording_status(self, status: str):
+        """Update the status label during recording/transcription."""
+        self._recording_label.setText(status)
 
     def add_user_message(self, text: str):
         """Add a user message bubble."""
@@ -151,19 +272,14 @@ class ChatPanel(QWidget):
         self.add_assistant_message(text)
 
     def clear_messages(self):
-        """Clear all chat messages."""
-        while self._messages_layout.count() > 1:
-            item = self._messages_layout.takeAt(0)
-            if item.widget():
+        """Clear all messages."""
+        count = self._messages_layout.count()
+        for i in range(count - 1, -1, -1):
+            item = self._messages_layout.itemAt(i)
+            if item.widget() and not isinstance(item, type(self._messages_layout.itemAt(count - 1))):
                 item.widget().deleteLater()
 
     def _scroll_to_bottom(self):
-        vbar = self._scroll.verticalScrollBar()
-        vbar.setValue(vbar.maximum())
-
-    def set_input_enabled(self, enabled: bool):
-        self._input.setEnabled(enabled)
-        self._send_btn.setEnabled(enabled)
-
-    def focus_input(self):
-        self._input.setFocus()
+        """Scroll to the bottom of the message area."""
+        scrollbar = self._scroll.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())

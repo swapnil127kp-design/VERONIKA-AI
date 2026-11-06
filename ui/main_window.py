@@ -220,6 +220,8 @@ class MainWindow(QMainWindow):
         # Chat panel (main area)
         self.chat_panel = ChatPanel()
         self.chat_panel.message_sent.connect(self._on_user_message)
+        self.chat_panel.voice_button_clicked.connect(self._toggle_voice)
+        self.chat_panel.voice_cancel_clicked.connect(self._cancel_voice)
         right_layout.addWidget(self.chat_panel, 1)
 
         main_layout.addWidget(right_panel, 1)
@@ -543,6 +545,8 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_voice_result(self, text: str):
+        self.chat_panel.set_recording_state(False)
+        self.chat_panel.update_recording_status("Transcribing...")
         self._set_state("idle")
         if text:
             self.chat_panel._input.setText(text)
@@ -550,6 +554,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_voice_error(self, error: str):
+        self.chat_panel.set_recording_state(False)
         self._set_state("error")
         self.chat_panel.add_assistant_message(f"🎙 {error}")
         QTimer.singleShot(2000, lambda: self._set_state("idle"))
@@ -636,19 +641,35 @@ class MainWindow(QMainWindow):
     # ═══════════════════════════════════════════════════════════
 
     def _toggle_voice(self):
+        """Toggle voice input with UI feedback."""
         if self.speech_recognizer.is_listening:
             self.speech_recognizer.cancel()
+            self.chat_panel.set_recording_state(False)
             self._set_state("idle")
         else:
+            self.chat_panel.set_recording_state(True, "Listening...")
             self._set_state("listening")
             language = config.get("voice", "stt_language", "en-US")
+
+            # Level callback for UI meter
+            def on_level(level: float):
+                self.chat_panel.update_recording_level(level)
+
             self.speech_recognizer.recognize_speech(
                 language=language,
                 on_result=lambda text: self._voice_result_signal.emit(text),
                 on_error=lambda err: self._voice_error_signal.emit(err),
-                on_started=lambda: self._set_state_signal.emit("listening"),
-                on_stopped=lambda: None,
+                on_started=lambda: self.chat_panel.update_recording_status("Listening..."),
+                on_stopped=lambda: self.chat_panel.set_recording_state(False),
+                on_level=on_level,
             )
+
+    def _cancel_voice(self):
+        """Cancel ongoing voice recording."""
+        if self.speech_recognizer.is_listening:
+            self.speech_recognizer.cancel()
+            self.chat_panel.set_recording_state(False)
+            self._set_state("idle")
 
     def _start_wake_word(self):
         def _on_wake():

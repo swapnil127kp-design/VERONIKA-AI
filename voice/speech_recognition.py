@@ -57,6 +57,7 @@ class SpeechRecognizer:
         on_error: Optional[Callable[[str], None]] = None,
         on_started: Optional[Callable[[], None]] = None,
         on_stopped: Optional[Callable[[], None]] = None,
+        on_level: Optional[Callable[[float], None]] = None,
         timeout: float = 10.0,
         phrase_time_limit: float = 30.0,
     ):
@@ -64,6 +65,7 @@ class SpeechRecognizer:
         Start listening for speech in a background thread.
         Calls on_result with recognized text or on_error with error message.
         The engine is chosen by config (voice.stt_engine).
+        on_level callback receives RMS level (0.0 to 1.0) during recording.
         """
         if self._is_listening:
             if on_error:
@@ -76,7 +78,7 @@ class SpeechRecognizer:
         self._listen_thread = threading.Thread(
             target=worker,
             args=(language, on_result, on_error, on_started, on_stopped,
-                  timeout, phrase_time_limit),
+                  on_level, timeout, phrase_time_limit),
             daemon=True,
         )
         self._listen_thread.start()
@@ -86,7 +88,7 @@ class SpeechRecognizer:
     # ------------------------------------------------------------------
 
     def _listen_google(self, language, on_result, on_error, on_started,
-                       on_stopped, timeout, phrase_time_limit):
+                       on_stopped, on_level, timeout, phrase_time_limit):
         try:
             import speech_recognition as sr
             self._ensure_recognizer()
@@ -147,7 +149,7 @@ class SpeechRecognizer:
     # ------------------------------------------------------------------
 
     def _listen_vosk(self, language, on_result, on_error, on_started,
-                     on_stopped, timeout, phrase_time_limit):
+                     on_stopped, on_level, timeout, phrase_time_limit):
         try:
             from voice.microphone import MicrophoneManager
             from voice.stt_vosk import VoskSTT
@@ -173,7 +175,13 @@ class SpeechRecognizer:
                 on_started()
 
             logger.info("Listening for speech (engine=vosk_local, offline)...")
-            wav = self._mic.record_seconds(duration=phrase_time_limit)
+
+            # Record with level callback for UI meter
+            wav = self._mic.record_seconds(
+                duration=phrase_time_limit,
+                on_level=on_level
+            )
+
             if self._cancel_flag.is_set():
                 return
             if not wav:

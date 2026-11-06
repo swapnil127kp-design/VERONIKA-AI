@@ -166,7 +166,12 @@ class MicrophoneManager:
         self._stop_flag.set()
         thread = self._record_thread
         if thread is not None and thread.is_alive():
+            # The recording thread owns the stream and closes it in its own
+            # finally block. PyAudio is not thread-safe: never touch the
+            # stream from this thread while it may still be reading.
             thread.join(timeout=5.0)
+            if thread.is_alive():
+                logger.warning("Recording thread did not stop within 5s")
         self._record_thread = None
         with self._lock:
             frames = b"".join(self._frames)
@@ -192,21 +197,27 @@ class MicrophoneManager:
         self._stop_flag.set()
 
     def release(self):
-        """Release all audio resources."""
+        """Release all audio resources.
+
+        Only the recording thread may touch the audio stream. Closing a
+        PyAudio stream from a different thread while stream.read() is in
+        flight raises an access violation (process crash).
+        """
         self._stop_flag.set()
         thread = self._record_thread
         if thread is not None and thread.is_alive():
-            thread.join(timeout=3.0)
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                # The reader thread is still live: deferring is safer than
+                # closing PyAudio objects concurrently (crashes the process).
+                logger.warning(
+                    "Recording thread still active; deferring audio cleanup"
+                )
+                return
         self._record_thread = None
         with self._lock:
             self._is_recording = False
-            if self._stream:
-                try:
-                    self._stream.stop_stream()
-                    self._stream.close()
-                except Exception:
-                    pass
-                self._stream = None
+            self._stream = None
             if self._audio:
                 try:
                     self._audio.terminate()
