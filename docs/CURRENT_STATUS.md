@@ -1,9 +1,38 @@
 # VERONIKA DEVELOPMENT STATUS — REAL-TIME UPDATE
 
-**Timestamp:** 2026-11-05 07:16:40 UTC  
+**Timestamp:** 2026-11-06 (session update; prior report dated 2026-11-05 07:16:40 UTC below)  
 **Active Work:** Phase 5 (Voice Engine) + Phase 15 (REA Research)  
-**Developer:** Kiro AI Development Team  
+**Developer:** Kiro AI Development Team / OpenCode session  
 **Owner:** Swapnil Kumar
+
+---
+
+## 🆕 SESSION UPDATE — 2026-11-06 (RESUME AUDIT + BLOCKER FIX)
+
+Audit performed per Continuity Engine §15 (docs vs. git vs. actual code). Corrections to the 2026-11-05 report:
+
+### Reality check (doc claims → verified state)
+1. ⏳ "Vosk model not yet copied" → **actually already copied**: `voice/models/vosk-model-en-us-0.22/` complete (am/conf/graph/ivector/README/uuid) from `Part 7\app\src\main\assets\model-en-us`. Doc was stale.
+2. ⏳ "Install vosk package" → **already installed** (`.venv` imports vosk OK).
+3. ⏳ "Basic UI integration (mic button)" → **staged in git but broken**: 3 files with uncommitted index changes (`ui/chat_panel.py` +154/-, `ui/main_window.py` +25, `voice/speech_recognition.py` +15) implementing `_on_mic_clicked`, cancel, recording state/level/status plumbing.
+
+### Blockers found and FIXED this session
+1. **SyntaxError** `voice/speech_recognition.py:92` — duplicated function-signature fragment (`on_stopped, timeout, phrase_time_limit):`) inside `_listen_google`. Removed. (PRIORITY 1)
+2. **Fatal access violation** `voice/microphone.py` — PyAudio process crash: `release()`/`stop_recording()` closed the audio stream from the caller thread while the background `_record` thread was inside `stream.read()` (PyAudio is not thread-safe; previously both the thread `finally` and `release()` could close the same stream). Ownership rewritten: **only the recording thread touches the stream**; callers set the stop flag and join (5 s); if the thread is still alive after the deadline, audio cleanup is deferred instead of crashing. Verified — a run that previously hard-crashed at 74% now completes.
+
+### Test result (VERIFIED 2026-11-06)
+`pytest tests -q` → **289 passed, 2 skipped** (2 = manual mic + human-speech integration tests), 23.58 s. Baseline was 280; staged voice suite = 11 tests (9 auto + 2 manual skips). Added `pytest.ini` to register the `integration` marker (removes PytestUnknownMarkWarning).
+
+### Resource audit (new owner-supplied resource)
+- **MYRAA V2** (`MYRAA MOBILE\mayra android`): separate Electron/React/Three.js + PMX anime-character assistant with a **native Android port** (provider networking, Keystore auth, STT+TTS, standalone operation). Registered as Resource D in `RESOURCE_INTEGRATION_MAP.md` §5; license not yet verified; **deep audit scheduled** — Android modules first. Nothing copied from it yet.
+- **MYRAA PC_** folder: EMPTY — nothing to audit; flagged in the map.
+
+### Checkpoint state
+- Branch `main`, **ahead of origin/main by 3 commits**. Owner approved commit on 2026-11-06:
+  - `11f66be` feat(voice): wire push-to-talk mic button; fix PyAudio crash (code + voice fixes + pytest.ini)
+  - `a651de6` docs: 2026-11-06 resume audit - register MYRAA resource, correct status
+  - Branch now **ahead 5**, working tree clean. Not pushed (push requires separate owner instruction).
+- Exact next actions (Phase 5 Day 2 plan, unchanged): privacy toggle UI, barge-in detection, wake-word keyring fix, settings exposure of stt_engine, UI recording indicator styling, then Phase 15 REA repo inspection in parallel.
 
 ---
 
@@ -59,18 +88,14 @@
 
 ### Phase 5 — Voice Engine (Day 1 of 4)
 
-**Today's Remaining Tasks:**
-1. ⏳ Copy Vosk model from Part 7 to VERONIKA
-2. ⏳ Test basic Vosk transcription
-3. ⏳ Install vosk package
-4. ⏳ Run voice tests
-5. ⏳ Basic UI integration (mic button)
+**Today's Remaining Tasks (status 2026-11-06):**
+1. ✅ Copy Vosk model from Part 7 to VERONIKA (verified done)
+2. ✅ Test basic Vosk transcription (test_transcribe_with_fake_wav passes)
+3. ✅ Install vosk package
+4. ✅ Run voice tests (9 passed, 2 manual-skipped; full suite 289 passed)
+5. ✅ Basic UI integration (mic button — staged, code reviewed, blockers fixed)
 
-**Vosk Model Status:**
-- ✅ Located in Part 7: `/model-en-us/` (68 MB)
-- ✅ Structure verified: am/ conf/ graph/ ivector/
-- ✅ All required files present
-- ⬜ Need to copy to VERONIKA/voice/models/
+⏳ Still open from the 05 report: commit approval + Day-2 items (see session update above).
 
 ### Phase 15 — REA Research (Parallel Track)
 
@@ -305,9 +330,10 @@ pytest tests/test_voice_recording.py -v
 ## 🐛 KNOWN ISSUES
 
 ### Active
-1. **Vosk model not yet copied** — Blocking voice testing
-2. **No UI for voice input** — Blocking user testing
+1. ~~Vosk model not yet copied~~ — RESOLVED (model verified in `voice/models/`, vosk importing OK)
+2. ~~Phase 5 Day-1 work uncommitted~~ — RESOLVED 2026-11-06: committed as `11f66be` (code) + `a651de6` (docs) after owner approval
 3. **Wake word keyring bug** — Known, not blocking
+4. ~~PyAudio crash (access violation)~~ — FIXED 2026-11-06 (stream ownership now single-threaded)
 
 ### Resolved Today
 - ✅ Microphone recording was incomplete → Fixed
