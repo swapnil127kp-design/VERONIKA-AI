@@ -59,6 +59,7 @@ class ChatPanel(QWidget):
     message_sent = Signal(str)
     voice_button_clicked = Signal()  # Emitted when mic button clicked
     voice_cancel_clicked = Signal()  # Emitted when cancel button clicked
+    speak_stop_clicked = Signal()    # Emitted when Stop (speech interrupt) clicked
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -175,10 +176,17 @@ class ChatPanel(QWidget):
         self._cancel_btn.clicked.connect(self._on_cancel_clicked)
         self._cancel_btn.hide()
 
+        # Stop button (shown while the assistant is speaking)
+        self._stop_speak_btn = CyberButton("⏹ Stop")
+        self._stop_speak_btn.setFixedWidth(80)
+        self._stop_speak_btn.clicked.connect(self._on_stop_speak_clicked)
+        self._stop_speak_btn.hide()
+
         voice_layout.addWidget(self._mic_btn)
         voice_layout.addWidget(self._recording_label)
         voice_layout.addWidget(self._level_meter, 1)
         voice_layout.addWidget(self._cancel_btn)
+        voice_layout.addWidget(self._stop_speak_btn)
         voice_layout.addStretch()
 
         input_layout.addWidget(text_row)
@@ -198,6 +206,17 @@ class ChatPanel(QWidget):
     def _on_cancel_clicked(self):
         """Handle cancel button click during recording."""
         self.voice_cancel_clicked.emit()
+
+    def _on_stop_speak_clicked(self):
+        """Handle Stop button click while the assistant is speaking."""
+        self.speak_stop_clicked.emit()
+
+    def set_speaking_state(self, is_speaking: bool):
+        """Show the Stop button (and hide recording controls) while speaking."""
+        if is_speaking:
+            self._stop_speak_btn.show()
+        else:
+            self._stop_speak_btn.hide()
 
     def set_recording_state(self, is_recording: bool, status_text: str = ""):
         """Update UI to show recording state."""

@@ -37,6 +37,13 @@ class WakeWordDetector:
         """Start listening for wake word in the background."""
         if self._is_active:
             return
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            # Previous detection loop is still shutting down (stop() may be
+            # awaiting its final cloud round-trip). Never run two loops at
+            # once -- the microphone device and loop state are single-owner.
+            logger.warning("Wake word start ignored: previous loop still active")
+            return
 
         self._on_wake = on_wake
         self._stop_flag.clear()
@@ -57,9 +64,23 @@ class WakeWordDetector:
         try:
             from app.config import config
             access_key = config.get_api_key("picovoice") or ""
+
             if not access_key:
                 import os
                 access_key = os.environ.get("PICOVOICE_ACCESS_KEY", "")
+                if access_key:
+                    # Write-back: the credential store was previously never
+                    # populated (bug: keyring key "never written"), so the
+                    # keyring/env pairing silently drifted. Promote the env
+                    # key into the store once, here, with the owner's key.
+                    try:
+                        config.set_api_key("picovoice", access_key)
+                        logger.info(
+                            "Picovoice access key promoted from the "
+                            "environment into the credential store"
+                        )
+                    except Exception as e:
+                        logger.warning("Could not persist Picovoice key: %s", e)
 
             if not access_key:
                 logger.info(
@@ -87,6 +108,8 @@ class WakeWordDetector:
 
     def _porcupine_loop(self):
         """Porcupine-based wake word detection loop."""
+        pa = None
+        stream = None
         try:
             import pyaudio
             import struct
@@ -111,15 +134,27 @@ class WakeWordDetector:
                     logger.info("Wake word detected!")
                     if self._on_wake:
                         self._on_wake()
-
-            stream.stop_stream()
-            stream.close()
-            pa.terminate()
         except Exception as e:
             logger.error("Porcupine loop error: %s", e)
         finally:
+            # Single-owner teardown: the loop thread closes its own stream,
+            # then the audio device, then the Porcupine instance.
+            if stream is not None:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
+            if pa is not None:
+                try:
+                    pa.terminate()
+                except Exception:
+                    pass
             if self._porcupine:
-                self._porcupine.delete()
+                try:
+                    self._porcupine.delete()
+                except Exception:
+                    pass
                 self._porcupine = None
             self._is_active = False
 
@@ -158,13 +193,23 @@ class WakeWordDetector:
             self._is_active = False
 
     def stop(self):
-        """Stop wake word detection."""
+        """Stop wake word detection.
+
+        The detection loop owns the Porcupine instance and its audio
+        stream (deleting porcupine from another thread while process()
+        is in flight is the same non-thread-safe native resource pattern
+        that crashed PyAudio -- avoided here). This method only signals
+        and joins.
+        """
         self._stop_flag.set()
-        self._is_active = False
-        if self._porcupine:
-            try:
-                self._porcupine.delete()
-            except Exception:
-                pass
-            self._porcupine = None
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            # The fallback loop may block for up to ~3s inside a cloud
+            # listen() round trip before observing the flag.
+            thread.join(timeout=6.0)
+            if thread.is_alive():
+                logger.warning(
+                    "Wake word loop did not stop in time; shutdown deferred"
+                )
+        self._thread = None
         logger.info("Wake word detection stopped")

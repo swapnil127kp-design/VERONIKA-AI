@@ -25,6 +25,7 @@ from vision.screenshot_capture import ScreenshotCapture
 from voice.speech_recognition import SpeechRecognizer
 from voice.text_to_speech import TextToSpeech
 from voice.wake_word import WakeWordDetector
+from voice.barge_in import BargeInMonitor
 
 from ui.components import AIOrb, StateLabel, ConnectionIndicator, Colors
 from ui.chat_panel import ChatPanel
@@ -47,6 +48,8 @@ class MainWindow(QMainWindow):
     _voice_error_signal = Signal(str)
     _reminder_signal = Signal(dict)
     _scout_alert_signal = Signal(str)
+    _stop_speech_signal = Signal()  # barge-in interrupts arrive off the UI thread
+    _speaking_state_signal = Signal(bool)  # TTS worker thread -> UI speaking state
 
     def __init__(self):
         super().__init__()
@@ -76,6 +79,7 @@ class MainWindow(QMainWindow):
         self.speech_recognizer = SpeechRecognizer()
         self.tts = TextToSpeech()
         self.wake_word = WakeWordDetector()
+        self.barge_in = BargeInMonitor()
         self.reminder_manager = ReminderManager(self.memory)
         self.tray = SystemTrayManager(self)
         self.persona_manager = PersonaManager.get_instance()
@@ -98,6 +102,8 @@ class MainWindow(QMainWindow):
         self._voice_error_signal.connect(self._on_voice_error)
         self._reminder_signal.connect(self._on_reminder_due)
         self._scout_alert_signal.connect(self._on_scout_alert)
+        self._stop_speech_signal.connect(self._stop_speech)
+        self._speaking_state_signal.connect(self.chat_panel.set_speaking_state)
 
         # ── Build UI ─────────────────────────────────────────
         self._setup_ui()
@@ -222,6 +228,7 @@ class MainWindow(QMainWindow):
         self.chat_panel.message_sent.connect(self._on_user_message)
         self.chat_panel.voice_button_clicked.connect(self._toggle_voice)
         self.chat_panel.voice_cancel_clicked.connect(self._cancel_voice)
+        self.chat_panel.speak_stop_clicked.connect(self._stop_speech)
         right_layout.addWidget(self.chat_panel, 1)
 
         main_layout.addWidget(right_panel, 1)
@@ -333,12 +340,7 @@ class MainWindow(QMainWindow):
             self.chat_panel.add_assistant_message(
                 f"[Entity → {em.display_name}] {greeting}"
             )
-            if config.get("voice", "tts_enabled", True):
-                self.tts.speak(
-                    greeting,
-                    on_started=lambda: self._set_state_signal.emit("speaking"),
-                    on_finished=lambda: self._set_state_signal.emit("idle"),
-                )
+            self._start_tts(greeting)
 
     @Slot(int)
     def _on_mode_changed(self, index: int):
@@ -481,19 +483,14 @@ class MainWindow(QMainWindow):
                     self._execute_action(action_data)
 
                 # TTS
-                if config.get("voice", "tts_enabled", True):
+                speech_text = full_response if config.get("voice", "tts_enabled", True) else ""
+                if speech_text:
                     # Strip action JSON and code blocks from speech
                     import re
-                    speech_text = re.sub(r'```(?:json)?\s*\{.*?\}\s*```', '', full_response, flags=re.DOTALL)
+                    speech_text = re.sub(r'```(?:json)?\s*\{.*?\}\s*```', '', speech_text, flags=re.DOTALL)
                     speech_text = re.sub(r'\{.*?"action".*?\}', '', speech_text, flags=re.DOTALL).strip()
-                    if speech_text:
-                        self.tts.speak(
-                            speech_text,
-                            on_started=lambda: self._set_state_signal.emit("speaking"),
-                            on_finished=lambda: self._set_state_signal.emit("idle"),
-                        )
-                    else:
-                        self._set_state_signal.emit("idle")
+                if speech_text:
+                    self._start_tts(speech_text)
                 else:
                     self._set_state_signal.emit("idle")
 
@@ -640,6 +637,41 @@ class MainWindow(QMainWindow):
     # Voice
     # ═══════════════════════════════════════════════════════════
 
+    def _start_tts(self, text: str):
+        """Speak text with speaking-state UI, Stop button, and optional barge-in.
+
+        Single entry point for assistant speech (greetings and responses) so
+        the interruption plumbing is wired exactly once.
+        """
+        if not config.get("voice", "tts_enabled", True):
+            return
+
+        def _on_started():
+            self._set_state_signal.emit("speaking")
+            self._speaking_state_signal.emit(True)
+            # Voice barge-in is config-gated (self-hearing risk on loud
+            # speakers); the Stop button works regardless.
+            if config.get("voice", "barge_in_enabled", False):
+                self.barge_in.start(
+                    on_interrupt=lambda: self._stop_speech_signal.emit()
+                )
+
+        def _on_finished():
+            self._speaking_state_signal.emit(False)
+            self.barge_in.stop()
+            self._set_state_signal.emit("idle")
+
+        self.tts.speak(text, on_started=_on_started, on_finished=_on_finished)
+
+    def _stop_speech(self):
+        """Stop current speech playback (Stop button or barge-in interrupt)."""
+        if self.tts.is_speaking:
+            logger.info("Speech interrupted (barge-in or Stop button)")
+            self.barge_in.stop()
+            self.tts.stop()
+            # on_finished of the TTS worker restores the idle state and the
+            # speaking UI, keeping the transitions consistent.
+
     def _toggle_voice(self):
         """Toggle voice input with UI feedback."""
         if self.speech_recognizer.is_listening:
@@ -775,6 +807,7 @@ class MainWindow(QMainWindow):
         logger.info("Shutting down VERONIKA AI...")
         self.reminder_manager.stop()
         self.wake_word.stop()
+        self.barge_in.stop()
         self.tts.stop()
         self.speech_recognizer.cancel()
         self.tray.hide()

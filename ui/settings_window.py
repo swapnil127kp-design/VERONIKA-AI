@@ -246,6 +246,43 @@ class SettingsWindow(QDialog):
         lang_row.addWidget(self._stt_lang_combo)
         g_layout.addLayout(lang_row)
 
+        engine_row = QHBoxLayout()
+        engine_row.addWidget(QLabel("STT Engine:"))
+        self._stt_engine_combo = QComboBox()
+        self._stt_engine_combo.addItem("Google (cloud) — free; audio leaves device", "google_free")
+        self._stt_engine_combo.addItem("Vosk (local) — 100% offline, private", "vosk_local")
+        idx = self._stt_engine_combo.findData(
+            config.get("voice", "stt_engine", "google_free")
+        )
+        self._stt_engine_combo.setCurrentIndex(max(0, idx))
+        engine_row.addWidget(self._stt_engine_combo, 1)
+        g_layout.addLayout(engine_row)
+
+        privacy_note = QLabel(
+            "🔒 Privacy: the Google engine sends your speech audio to Google's "
+            "free web API for recognition. The Vosk engine runs entirely on "
+            "this PC (model: voice/models/) and never uploads audio."
+        )
+        privacy_note.setWordWrap(True)
+        privacy_note.setStyleSheet(f"color: {Colors.TEXT_SECONDARY.name()}; font-size: 11px;")
+        g_layout.addWidget(privacy_note)
+
+        self._barge_in_check = QCheckBox(
+            "Allow voice interruption (barge-in) while VERONIKA speaks"
+        )
+        self._barge_in_check.setChecked(config.get("voice", "barge_in_enabled", False))
+        g_layout.addWidget(self._barge_in_check)
+
+        barge_note = QLabel(
+            "Barge-in keeps the microphone metering active during speech and "
+            "interrupts VERONIKA when it detects sustained voice above the "
+            "threshold. On loud speakers VERONIKA may hear herself — the "
+            "⏹ Stop button in the chat view always works."
+        )
+        barge_note.setWordWrap(True)
+        barge_note.setStyleSheet(f"color: {Colors.TEXT_SECONDARY.name()}; font-size: 11px;")
+        g_layout.addWidget(barge_note)
+
         wake_group = QGroupBox("Wake Word")
         w_layout = QVBoxLayout(wake_group)
 
@@ -452,6 +489,10 @@ class SettingsWindow(QDialog):
         config.set("voice", "tts_enabled", self._tts_check.isChecked())
         config.set("voice", "tts_speed", self._speed_spin.value())
         config.set("voice", "stt_language", self._stt_lang_combo.currentText())
+        engine_data = self._stt_engine_combo.currentData()
+        if engine_data:
+            config.set("voice", "stt_engine", engine_data)
+        config.set("voice", "barge_in_enabled", self._barge_in_check.isChecked())
 
         # Wake word
         config.set("wake_word", "enabled", self._wake_check.isChecked())
