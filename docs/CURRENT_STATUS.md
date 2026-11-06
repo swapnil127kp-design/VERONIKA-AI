@@ -20,6 +20,13 @@ Audit performed per Continuity Engine §15 (docs vs. git vs. actual code). Corre
 1. **SyntaxError** `voice/speech_recognition.py:92` — duplicated function-signature fragment (`on_stopped, timeout, phrase_time_limit):`) inside `_listen_google`. Removed. (PRIORITY 1)
 2. **Fatal access violation** `voice/microphone.py` — PyAudio process crash: `release()`/`stop_recording()` closed the audio stream from the caller thread while the background `_record` thread was inside `stream.read()` (PyAudio is not thread-safe; previously both the thread `finally` and `release()` could close the same stream). Ownership rewritten: **only the recording thread touches the stream**; callers set the stop flag and join (5 s); if the thread is still alive after the deadline, audio cleanup is deferred instead of crashing. Verified — a run that previously hard-crashed at 74% now completes.
 
+### Phase 5 Day 2 — COMPLETED this session (2026-11-06)
+1. **Barge-in engine** (`voice/barge_in.py` NEW): `BargeInDecider` (pure decision core, unit-tested; sustained-level + cooldown logic) + `BargeInMonitor` (mic metering → interrupt). Config-gated (`voice.barge_in_enabled`, default OFF), thresholds configurable.
+2. **Speech interruption UI**: chat panel ⏹ Stop button (always available), new single TTS entry `_start_tts()` in main window, `_stop_speech_signal` for thread-safe interrupts, `_speaking_state_signal` for UI-only-on-Qt-thread state changes.
+3. **STT engine selector** in settings (Google cloud vs Vosk local) + 🔒 privacy note per engine.
+4. **Wake-word fixes**: Picovoice env key now promoted into the credential store (keyring "never written" bug), `stop()` joins instead of foreign-thread deletion, `start()` refuses while a loop is alive, Porcupine loop teardown in `finally` (no stream leak on exceptions).
+5. **Push approved** — 5 commits synced with origin (verified `origin/main..main` empty after fetch).
+
 ### Test result (VERIFIED 2026-11-06)
 `pytest tests -q` → **289 passed, 2 skipped** (2 = manual mic + human-speech integration tests), 23.58 s. Baseline was 280; staged voice suite = 11 tests (9 auto + 2 manual skips). Added `pytest.ini` to register the `integration` marker (removes PytestUnknownMarkWarning).
 

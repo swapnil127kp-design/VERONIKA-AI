@@ -334,28 +334,60 @@ Phase 5 is **COMPLETE** when:
 
 ---
 
+# DAY 2 (2026-11-06) - COMPLETED
+
+## 1. Barge-in detection (new)
+- `voice/barge_in.py`:
+  - `BargeInDecider` - pure, unit-tested decision core: sustained-RMS-level detection with threshold / sustain-window / cooldown. The cooldown does NOT reset the sustained timer: continuous speech triggers about once per cooldown interval, not never.
+  - `BargeInMonitor` - wires `MicrophoneManager` level metering to the decider while the assistant speaks; interrupt callback fires on the mic worker thread.
+- Wired through `ui/main_window.py`:
+  - Single TTS entry point `_start_tts()` (greetings and responses) - speaking-state UI, optional barge-in (`voice.barge_in_enabled`, default OFF), Stop button.
+  - `_stop_speech()` slot + `_stop_speech_signal` (barge-in callback runs off the UI thread; UI changes only through Qt signals: new `_speaking_state_signal`).
+  - Speech is always interruptible: Stop button + any new user message (existing behavior) + optional voice barge-in.
+- Settings: Voice tab exposes "Allow voice interruption (barge-in)" with a self-hearing warning (loud speakers can trigger it; the Stop button is the guaranteed fallback). Advanced knobs: `voice.barge_in_threshold` (0.30), `voice.barge_in_sustain_ms` (350), `voice.barge_in_cooldown_ms` (2000).
+
+## 2. STT engine selector + privacy note (new)
+- Settings > Voice > "STT Engine": Google (cloud, free - audio leaves device) vs Vosk (local, 100% private), stored in `voice.stt_engine`, with a privacy note describing each engine's data flow.
+
+## 3. Wake word keyring fix (new)
+- Confirmed bug: the credential store never received the Picovoice key; the env fallback was read-only, so keyring/env pairing silently drifted. Fix: an env-sourced key is now promoted into the credential store on first use (`voice/wake_word.py`).
+- Thread-safety hardening (same single-owner pattern as the mic fix):
+  - `stop()` signals + joins (6 s, generous for the approx-3 s cloud fallback round trip) and no longer deletes Porcupine from another thread (same native double-ownership crash pattern as PyAudio).
+  - `start()` refuses while the previous loop thread is still alive.
+  - `_porcupine_loop` teardown moved to a `finally` (stream -> PyAudio -> porcupine), so exceptions no longer leak the audio stream.
+
+## 4. Test evidence
+`pytest tests -q` -> **297 passed, 2 skipped** (289 prior + 8 new barge-in tests in `tests/test_barge_in.py`), 18.7 s.
+
+## 5. Remaining for Phase 5
+- Day 3: Hindi/Hinglish STT evaluation, performance tuning.
+- Day 4: end-to-end voice conversation verification + documentation pass.
+
+---
+
 ## NEXT ACTIONS
 
 **Immediate (Next 1 Hour):**
-1. Copy Vosk model from Part 7
-2. Add `vosk` to requirements.txt
-3. Implement VoskSTT class
-4. Test basic "hello world" recognition
+1. Copy Vosk model from Part 7 - DONE (verified 2026-11-06: `voice/models/vosk-model-en-us-0.22/`)
+2. Add `vosk` to requirements.txt - DONE
+3. Implement VoskSTT class - DONE
+4. Test basic recognition - DONE (fake-WAV path tested; real-mic tests are manual)
 
-**Today (Remaining):**
-5. Integrate with speech_recognition.py
-6. Add privacy toggle
-7. Create basic UI integration
-8. Write unit tests
+**Completed 2026-11-06 (Day 2):**
+5. Integrate with speech_recognition.py - DONE (previous session)
+6. Privacy toggle / engine selector UI - DONE
+7. Basic UI integration (mic button, level meter, cancel) - DONE
+8. Unit tests - DONE (297 passing)
+9. UI polish - DONE
+10. Barge-in - DONE
+11. Wake word keyring fix - DONE
 
-**Tomorrow:**
-9. Polish UI
-10. Add barge-in
-11. Fix wake word
-12. Evaluate Hindi
+**Next (Day 3):**
+12. Evaluate Hindi/Hinglish STT
+13. Performance tuning
 
 ---
 
 **Phase 5 Lead:** Kiro AI Development Team  
-**Last Updated:** 2026-11-05 07:14 UTC  
+**Last Updated:** 2026-11-06 (Day 2 complete)  
 **Status:** Microphone pipeline complete ✅ | Vosk integration in progress 🔄
