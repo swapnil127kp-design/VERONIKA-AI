@@ -4,7 +4,7 @@
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](https://python.org)
 [![Framework: PySide6](https://img.shields.io/badge/GUI-PySide6%20%28Qt%206%29-41CD52.svg?logo=qt&logoColor=white)](https://pypi.org/project/PySide6/)
 [![Protocol: Model Context Protocol](https://img.shields.io/badge/Protocol-MCP-orange.svg)](https://modelcontextprotocol.io)
-[![Tests: 205 Passed](https://img.shields.io/badge/Tests-205%20Passed-brightgreen.svg)](tests/)
+[![Tests: 311 Passed](https://img.shields.io/badge/Tests-311%20Passed-brightgreen.svg)](tests/)
 [![Author: Swapnil Kumar](https://img.shields.io/badge/Author-Swapnil%20Kumar-blueviolet.svg)](#-author--maintainer)
 
 An open-source, production-grade autonomous desktop AI assistant and multi-agent orchestrator built with **PySide6 (Qt 6)**. VERONIKA combines multi-provider LLM intelligence (**OpenAI**, **Google Gemini**, **Groq**, **OpenRouter**, **OmniRoute**) with full **Model Context Protocol (MCP)** tool integration, multi-agent swarm execution, real-time voice and vision, persistent SQLite memory, and deep Windows automation.
@@ -41,7 +41,7 @@ An open-source, production-grade autonomous desktop AI assistant and multi-agent
 | 🔌 **Model Context Protocol (MCP)** | Standardized tool integration allowing dynamic execution of external developer servers |
 | 🐝 **Autonomous Swarm Coordinator** | Multi-worker parallel reasoning engine for executing complex development and automation tasks |
 | 🎭 **Multi-Entity Persona System** | Switch dynamically between *VERONIKA* (Commander), *FRIDAY* (Tactical), and *ULTRON* (Guardian) |
-| 🎙 **Real-time Voice I/O** | Push-to-talk speech-to-text with multi-engine TTS (Edge-TTS & Windows SAPI5) and DSP pitch shifting |
+| 🎙 **Advanced Voice Engine (Phase 5)** | Real-time push-to-talk STT with **Offline Vosk (Hindi & English)**, barge-in voice interruption, multi-engine TTS (Edge-TTS & Windows SAPI5), and cloud-fallback privacy gates |
 | 👁 **Vision & Screen Analysis** | Low-latency screenshot capture with automated AI visual reasoning |
 | 🌐 **3D Holographic Orb Bridge** | Embedded WebSocket server bridging system states to a 3D Three.js holographic particle orb |
 | ⚡ **Windows Automation Engine** | Sandboxed execution for app launching, file manipulation, browser navigation, and custom workflows |
