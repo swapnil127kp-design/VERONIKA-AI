@@ -49,3 +49,18 @@ A cost-effective, lightning-fast, and 100% reliable screen interaction pipeline:
 ## 🧪 5. Preflight Verification Harness (`preflight.py`)
 
 * End-to-end live testing of real endpoints, graph rendering, speech pipelines, and model calls before declaring any build "Done".
+
+
+---
+
+## ⚡ 6. V.E.R.O.N.I.K.A. Oversight & Ultron Containment Protocol
+
+* **Full Accreditation:** **V.E.R.O.N.I.K.A.** = **Visionary Engineered Robust Omnipotent Invincible Keen Autonomous**
+* **The Avengers Lab Dynamics (Ultron vs Veronika):**
+  * When ULTRON activates: 3D Hologram fractures with aggressive crimson/amber tendrils corrupting the ambient galaxy.
+  * Voice Command: *"Veronika, Ultron ko control karo"*
+  * VERONIKA Override: Massive electric Cyan & Magenta containment rings clash with and suppress the rogue amber tendrils, forcing ULTRON into a sandboxed sleep state with voice confirmation: *"Containment protocol engaged. ULTRON neural matrix sandboxed and isolated, Swapnil sir."*
+* **Instant Kill Mode (Iron Spider Protocol):**
+  * Voice Trigger: *"Activate Instant Kill"*
+  * Visuals: Sharp crimson targeting reticles lock onto active processes and network ports.
+  * Functionality: Force-terminates suspicious/laggy background processes, locks external network ports, and runs hyper-aggressive code & bug purges.
