@@ -230,3 +230,122 @@ class PreferenceRepository:
         with self.db.get_cursor() as c:
             c.execute("SELECT key, value FROM preferences")
             return {row["key"]: row["value"] for row in c.fetchall()}
+
+
+class CategoryMemoryRepository:
+    """Base class for categorized memory entries with semantic ranking."""
+
+    def __init__(self, database: Database = None, table_name: str = "user_profile"):
+        self.db = database or db
+        self.table_name = table_name
+
+    def add(self, content: str, metadata: Optional[Dict[str, Any]] = None, relevance_score: float = 1.0) -> int:
+        """Add a memory entry."""
+        metadata = metadata or {}
+        with self.db.get_cursor() as c:
+            c.execute(
+                f"""INSERT INTO {self.table_name} (content, relevance_score, metadata_json)
+                   VALUES (?, ?, ?)""",
+                (content, relevance_score, json.dumps(metadata)),
+            )
+            return c.lastrowid
+
+    def get_by_id(self, memory_id: int) -> Optional[dict]:
+        """Retrieve a specific memory by ID."""
+        with self.db.get_cursor() as c:
+            c.execute(
+                f"SELECT * FROM {self.table_name} WHERE id = ?",
+                (memory_id,),
+            )
+            row = c.fetchone()
+            return dict(row) if row else None
+
+    def get_all(self, limit: int = 100, offset: int = 0) -> List[dict]:
+        """Get all memories ordered by timestamp (newest first)."""
+        with self.db.get_cursor() as c:
+            c.execute(
+                f"SELECT * FROM {self.table_name} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+            return [dict(row) for row in c.fetchall()]
+
+    def search_by_content(self, query: str, limit: int = 20) -> List[dict]:
+        """Full-text search in content field."""
+        with self.db.get_cursor() as c:
+            c.execute(
+                f"SELECT * FROM {self.table_name} WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                (f"%{query}%", limit),
+            )
+            return [dict(row) for row in c.fetchall()]
+
+    def update_relevance(self, memory_id: int, score: float):
+        """Update relevance score for a memory."""
+        with self.db.get_cursor() as c:
+            c.execute(
+                f"UPDATE {self.table_name} SET relevance_score = ? WHERE id = ?",
+                (score, memory_id),
+            )
+
+    def delete(self, memory_id: int):
+        """Delete a specific memory."""
+        with self.db.get_cursor() as c:
+            c.execute(f"DELETE FROM {self.table_name} WHERE id = ?", (memory_id,))
+
+    def clear_all(self):
+        """Delete all memories in this category."""
+        with self.db.get_cursor() as c:
+            c.execute(f"DELETE FROM {self.table_name}")
+
+    def _calculate_relevance(self, query: str, content: str, timestamp: str) -> float:
+        """Calculate semantic relevance score based on word overlap and recency."""
+        from datetime import datetime, timedelta
+
+        # Word overlap scoring
+        query_words = set(query.lower().split())
+        content_words = set(content.lower().split())
+        overlap = len(query_words & content_words)
+        max_words = max(len(query_words), len(content_words))
+        word_score = overlap / max_words if max_words > 0 else 0.0
+
+        # Recency scoring (exponential decay)
+        try:
+            mem_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            now = datetime.now(mem_time.tzinfo) if mem_time.tzinfo else datetime.now()
+            age_hours = (now - mem_time).total_seconds() / 3600
+            # Score decays from 1.0 to 0.1 over 7 days
+            recency_score = max(0.1, 1.0 - (age_hours / (7 * 24)) * 0.9)
+        except:
+            recency_score = 1.0
+
+        # Combine: 70% word overlap, 30% recency
+        return (0.7 * word_score) + (0.3 * recency_score)
+
+
+class UserProfileRepository(CategoryMemoryRepository):
+    """Manages user profile memories."""
+    def __init__(self, database: Database = None):
+        super().__init__(database, "user_profile")
+
+
+class ProjectRepository(CategoryMemoryRepository):
+    """Manages project memories."""
+    def __init__(self, database: Database = None):
+        super().__init__(database, "project")
+
+
+class TaskRepository(CategoryMemoryRepository):
+    """Manages task memories."""
+    def __init__(self, database: Database = None):
+        super().__init__(database, "task")
+
+
+class PreferenceMemoryRepository(CategoryMemoryRepository):
+    """Manages preference memories."""
+    def __init__(self, database: Database = None):
+        super().__init__(database, "preference")
+
+
+class SessionMemoryRepository(CategoryMemoryRepository):
+    """Manages session context memories."""
+    def __init__(self, database: Database = None):
+        super().__init__(database, "session_memory")

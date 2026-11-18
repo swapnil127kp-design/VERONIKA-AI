@@ -53,10 +53,10 @@ Completed:
 4. `docs/MODEL_SCOUT.md` with live-verified data (18 free OpenRouter models incl. 1M-context vision+tools; Gemini 2.5 Flash/Pro free tier).
 **Accept:** ✅ 280 tests pass (269 + 11 scout tests, network mocked; live scan run manually 2026-11-04).
 
-## Phase 5 — Voice Engine ⬜
-1. **Complete `microphone.py` recording pipeline** (currently device-listing only — biggest voice gap).
-2. STT: local Vosk option using Part 7's bundled US-English model binaries (`voice/` desktop via `vosk` pip) + privacy-gated cloud STT; Hindi/Hinglish support evaluation.
-3. TTS per-persona profiles; speech interruption (barge-in); optional wake word (fix dead keyring path `wake_word.py:59`); visible mic status + stop control.
+## Phase 5 — Voice Engine ✅ IMPLEMENTED (Days 1–3; Day 4 = owner-assisted manual verification)
+1. ~~Complete `microphone.py` recording pipeline~~ ✅ (commits `ff54884`, `11f66be`; PyAudio thread-safety rewritten 2026-11-06).
+2. ~~STT: local Vosk + privacy-gated cloud~~ ✅ en-US + **hi-IN offline models**, dual-engine router, cloud-fallback gate (`3447d3a`, `1c858d7`). Hindi/Hinglish *listening accuracy* evaluation = manual Day 4.
+3. ~~TTS per-persona profiles; barge-in; wake word; mic status + stop~~ ✅ (`voice/barge_in.py` config-gated; wake-word keyring + teardown fixes). Remaining Day 4: manual end-to-end conversation verification, docs final pass, Phase 5 completion report. **Accept: 311 passed + 2 skipped (verified 2026-11-06); manual E2E pending owner.**
 
 ## Phase 6 — Three.js UI Integration ⬜
 1. Vendor ULTRON Next.js app into `ui/assets/ultron`; add `output: "export"`; embed via QWebEngineView (serve `out/` over local HTTP, not file://).

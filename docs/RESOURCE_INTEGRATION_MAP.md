@@ -1,7 +1,7 @@
 # RESOURCE INTEGRATION MAP — VERONIKA
 
 > Phase 0 deliverable. Every row is grounded in an actual audit with file:line evidence.
-> Last updated: 2026-11-06. **Status: ULTRON ✓, VERONIKA ✓, Part 7 ✓, MYRAA △ (partial — new owner-supplied resource, deep audit pending).**
+> Last updated: 2026-11-06 (deep audit 2026-11-06 session). **Status: ULTRON ✓, VERONIKA ✓, Part 7 ✓, MYRAA ✓ (deep audit complete — source MIT-verified, assets restricted, §5).**
 
 ## 1. Source Projects
 
@@ -10,7 +10,7 @@
 | A | VERONIKA (existing, partially built) | `C:\Users\Swapnil\OneDrive\Desktop\claude code\VERONIKA` | MIT (author: Swapnil Kumar) | Primary codebase — extend, don't rewrite |
 | B | JARVIS Part 7 (YouTube playlist source) | `C:\Users\Swapnil\OneDrive\Desktop\claude code\jarvis\Playlist-main\Playlist-main\Part 7` | **TAMCL v1.0** (Tech GPTx / Rehaan, © 2026) — reuse/sale permitted **with preserved attribution**; media-shoutout clause only triggers if VERONIKA media references this codebase | ⚠️ **Pattern reference + asset salvage with attribution** — see headline finding below |
 | C | ULTRON 3D UI | `C:\Users\Swapnil\OneDrive\Desktop\claude code\ultron` | **MIT © 2026 Swapnil Kumar** (`LICENSE`, 1,070 B) | Full reuse permitted |
-| D | MYRAA V2 (desktop assistant + native Android port) | `C:\Users\Swapnil\OneDrive\Desktop\claude code\MYRAA MOBILE\mayra android` (`MYRAA PC_` folder is currently EMPTY) | `LICENSE` present, contents not yet verified | Pending deep audit — Android-native provider networking, Keystore auth, STT+TTS, PWA/HUD; see §5 |
+| D | MYRAA V2 (desktop assistant + native Android port) | `C:\Users\Swapnil\OneDrive\Desktop\claude code\MYRAA MOBILE\mayra android` (`MYRAA PC_` folder verified EMPTY again 2026-11-06) | `LICENSE` = MIT ("MYRAA contributors"), asset restrictions in `THIRD-PARTY-NOTICES.md` — verified | Deep audit complete — Android modules inspected at file level, license for SOURCE adaptation cleared, see §5 |
 
 ## 2. ULTRON UI — verified findings (audit complete)
 
@@ -136,7 +136,7 @@ Full audit: 66 source/config/test files inspected, all claims file:line-cited. G
 - "Embedded release API key" claim is false advertising — no key exists (good).
 - Voice-videos docs reference 3 mp4s that don't exist; no audio assets at all.
 
-## 5. MYRAA V2 — new owner-supplied resource (top-level audit 2026-11-06, deep audit pending)
+## 5. MYRAA V2 — owner-supplied resource (top-level audit 2026-11-06; DEEP AUDIT COMPLETE 2026-11-06)
 
 Supplied by the owner 2026-11-06 alongside an empty `MYRAA PC_` folder and build artifacts (`MYRAA-Mobile-1.0.0-rc.5-private.apk`, instrumentation logs, `SHA256.json`). Top-level findings — verified only to the depth listed:
 
@@ -145,8 +145,35 @@ Supplied by the owner 2026-11-06 alongside an empty `MYRAA PC_` folder and build
 3. **Structure:** `agent/`, `android/`, `electron/`, `voice/`, `memory/`, `cognition/`, `companion/`, `settings/`, `permissions/`, `presence/`, `native/`, TypeScript servers (`server.ts`, `server_memory.ts`, `server_screenVision.ts`) + Vite builds (`vite.mobile.config.ts`) — 52 top-level entries.
 4. **Docs bundle:** `MYRAA-V2-PROGRESS.md`, `MYRAA-V2-TEST-REPORT.md`, `MYRAA-V2-RELEASE-CHECKLIST.md`, `docs/GOOGLE-KEY-TROUBLESHOOTING.md`, `docs/V2-BUILD.md`, `docs/V2-MODELS.md` — useful as a pattern reference for VERONIKA's own continuity/testing ledger system.
 5. **Build artifacts present but NOT executed:** RC5 APK + `android-actions-*.log` — never install/run resource binaries; APK analysis (if requested) belongs to the REA/packaging track.
-6. **Reuse stance:** *pending* until (a) `LICENSE` and `THIRD-PARTY-NOTICES.md` are read, (b) `android/` networking/Keystore/STT modules are inspected, (c) PMX character runtime (third-party MMD ecosystem — redistribution rights explicitly limited per `README.md:17`) is separated from provider/voice/memory code that can be adapted.
-7. **Action:** schedule MYRAA deep audit (Android modules first, license second) in the next planning pass; update this map only after file-level inspection. Do not copy anything from MYRAA until license compliance is verified.
+
+### 5.1 Deep audit results (file-level, 2026-11-06)
+
+**License (RESOLVED):**
+- `mayra android\LICENSE` = **MIT, "Copyright (c) 2026 MYRAA contributors"**; third-party deps, character models, textures and fonts are excluded and governed by `THIRD-PARTY-NOTICES.md`.
+- Restriction is **asset-bound, not source-bound**: Evelyn PMX model (by 观海子) is private-testing-only and must not be redistributed (`THIRD-PARTY-NOTICES.md`, `android/README.md`, inline warning in `scripts\build-android.ps1`, APK name suffix `-private`).
+- **Reuse decision:** adapting MYRAA **source code** into VERONIKA is permitted under MIT with attribution (record attribution in VERONIKA's `THIRD-PARTY-NOTICES` at integration time). **Never copy or redistribute the Evelyn PMX model or owner artwork.** VERONIKA remains private/local, but the no-redistribution rule is recorded as standing.
+
+**Technology (verified by reading the code):**
+- Android companion is **NOT React Native/Capacitor**: hybrid **native Android Java shell + hardened WebView** hosting a Vite-bundled TS/Three.js UI. Build chain = `scripts\build-android.ps1` (Vite → `javac` (source/target 8, `android.jar` API 35) → `d8` → AAPT2 → zipalign → `apksigner` debug keystore). No Gradle/Kotlin/NDK.
+- Manifest (`android\app\src\main\AndroidManifest.xml`): package `com.myraa.mobile`, v1.0.0-rc.5, minSdk 26 / targetSdk 35; permissions INTERNET, RECORD_AUDIO, MODIFY_AUDIO_SETTINGS, READ_CONTACTS, FOREGROUND_SERVICE(+MIC/PLAYBACK), POST_NOTIFICATIONS, SYSTEM_ALERT_WINDOW; single activity `.MainActivity`, foreground service `.LiveVoiceService`; cleartext disabled, backup disabled.
+
+**Salvageable patterns (targets for VERONIKA Phase 10 / Android Companion — ADAPT, with attribution):**
+| Capability | MYRAA file (verified) | What it does | VERONIKA target |
+|---|---|---|---|
+| Keystore key vault | `android\app\src\main\java\com\myraa\mobile\MainActivity.java` (472 ln) | Android Keystore AES-GCM (alias `myraa.mobile.gemini.v1`); plaintext key never returned to JS | `server/auth.py` key handling → mobile auth module |
+| Credential verification + ephemeral live tokens | `android\...\mobile\GeminiAccess.java` (114 ln) | Metadata-only model check, single-use 30-min `auth_tokens`, 13 actionable error codes, no key leakage | AI provider credential layer (shared across devices) |
+| Bounded device-action executor | `android\...\mobile\MobileActions.java` (131 ln) | open_app/YouTube/web-search/WhatsApp **draft-only**/contacts with E.164, ambiguity dialog, dedupe, honest status | Mobile task/automation surface — mirrors VERONIKA permission levels |
+| Foreground live-voice service | `android\...\mobile\LiveVoiceService.java` (46 ln) | Ongoing mic notification + Stop action + optional overlay chip; keeps explicit Live call alive across app switches | Mobile voice companion service |
+| Gemini Live WSS transport | `src\mobile\LiveTransport.ts` (98 ln) | `wss://generativelanguage.googleapis.com/...BidiGenerateContentConstrained` with ephemeral token; 16 kHz PCM, transcripts/functionCalls with dedupe | Realtime voice pipeline (PC + mobile) |
+| Hardened WebView shell | `MainActivity.java` | Fixed `appassets.androidplatform.net` origin, CSP, file/cookie/iframe blocking, renderer-crash recovery | VERONIKA Android WebView security model |
+| On-device instrumentation harness | `android\tests\java\com\myraa\mobile\tests\` (3 suites) | `ActionsInstrumentation` 18 PASS, `AuthInstrumentation` 39 PASS (real device), `SmokeInstrumentation` | Test pattern for VERONIKA Android suite |
+| Automated UI smoke harness | `tests\mobile-voice-ui-smoke.cjs` → `mobile-live-ui.json` | 25 named UI checks (Live connect/captions/PCM/interruption/tool-roundtrip/stop semantics), all passed | UI test harness pattern |
+| Desktop secret store | `secrets\secretStore.ts` (146 ln) | DPAPI-via-PowerShell-stdin, 0600 fallback | Comparison point for Windows Credential Manager usage (`keyring`) |
+
+**Not reusable / not wanted:** Evelyn PMX character + animations (license), owner artwork, MYRAA branding; `companion/` PMX runtime is architecture-reference only (classification C for visuals; VERONIKA keeps its own ULTRON orb identity).
+
+6. **Reuse stance:** **CLEARED for source adaptation under MIT with attribution** (see 5.1); asset/character redistribution remains prohibited.
+7. ~~**Action:** schedule MYRAA deep audit...~~ → **DONE 2026-11-06** (this section). Next: start adapting the priority-1 pattern (Keystore vault + credential layer) when Phase 10 Android Companion begins; also verify REA-side APK teardown only if the owner explicitly requests the RC5 artifact itself.
 
 ## 6. Resource extraction rules (standing)
 

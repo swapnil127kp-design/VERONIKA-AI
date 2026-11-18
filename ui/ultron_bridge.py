@@ -27,7 +27,7 @@ from typing import Callable, List, Optional, Set
 logger = logging.getLogger(__name__)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-ORB_HTML = os.path.join(_HERE, "assets", "orb.html")
+ORB_HTML = os.path.join(_HERE, "assets", "ultron", "index.html")
 
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -384,27 +384,63 @@ class OrbWebSocketServer:
 
 class _OrbPageHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path in ("/", "/orb", "/index.html"):
-            self._serve_file(ORB_HTML, "text/html; charset=utf-8")
+        # Map request path to filesystem path
+        if self.path in ("/", "/index.html"):
+            file_path = ORB_HTML
+            content_type = "text/html; charset=utf-8"
+        elif self.path.startswith("/_next/"):
+            # Serve Next.js static assets
+            ultron_dir = os.path.dirname(ORB_HTML)
+            file_path = os.path.join(ultron_dir, self.path.lstrip("/"))
+            # Infer content type from extension
+            if file_path.endswith(".js"):
+                content_type = "application/javascript"
+            elif file_path.endswith(".css"):
+                content_type = "text/css"
+            elif file_path.endswith(".json"):
+                content_type = "application/json"
+            elif file_path.endswith(".wasm"):
+                content_type = "application/wasm"
+            else:
+                content_type = "application/octet-stream"
         else:
             self.send_error(404, "Not Found")
+            return
+
+        self._serve_file(file_path, content_type)
 
     def _serve_file(self, path: str, content_type: str):
         if not os.path.exists(path):
-            self.send_error(404, "orb.html not found")
+            self.send_error(404, "Not found")
             return
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = f.read()
-            data = data.replace("__ORB_WS_PORT__", str(_ACTIVE_WS_PORT))
-            data = data.encode("utf-8")
-        except OSError:
-            self.send_error(500, "Read error")
-            return
+
+        # For HTML files, support port injection
+        if content_type.startswith("text/html"):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = f.read()
+                data = data.replace("__ORB_WS_PORT__", str(_ACTIVE_WS_PORT))
+                data = data.encode("utf-8")
+            except OSError:
+                self.send_error(500, "Read error")
+                return
+        else:
+            # Binary/text assets served as-is
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+            except OSError:
+                self.send_error(500, "Read error")
+                return
+
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        # Cache static assets longer; HTML not cached for updates
+        if "_next/" in self.path and not self.path.endswith(".html"):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 

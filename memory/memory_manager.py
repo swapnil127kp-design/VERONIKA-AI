@@ -13,6 +13,11 @@ from memory.repositories import (
     ReminderRepository,
     AutomationHistoryRepository,
     PreferenceRepository,
+    UserProfileRepository,
+    ProjectRepository,
+    TaskRepository,
+    PreferenceMemoryRepository,
+    SessionMemoryRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +32,11 @@ class MemoryManager:
         self.reminders = ReminderRepository(database)
         self.automation = AutomationHistoryRepository(database)
         self.preferences = PreferenceRepository(database)
+        self.user_profile = UserProfileRepository(database)
+        self.projects = ProjectRepository(database)
+        self.tasks = TaskRepository(database)
+        self.preference_memories = PreferenceMemoryRepository(database)
+        self.session = SessionMemoryRepository(database)
 
         self._current_conversation_id: Optional[int] = None
 
@@ -132,3 +142,125 @@ class MemoryManager:
         self.memories.clear_all()
         self.automation.clear_all()
         logger.warning("All data cleared from database")
+
+    # ═══════════════════════════════════════════════════════════
+    # Categorized Memory Management (Phase 7)
+    # ═══════════════════════════════════════════════════════════
+
+    def add_user_profile(self, name: str, bio: str = "", preferences: Optional[Dict[str, str]] = None) -> int:
+        """Store user profile information."""
+        content = f"Name: {name}\nBio: {bio}"
+        metadata = {"name": name, "preferences": preferences or {}}
+        memory_id = self.user_profile.add(content, metadata)
+        logger.info("User profile saved: #%d - %s", memory_id, name)
+        return memory_id
+
+    def add_project(self, name: str, path: str = "", description: str = "", status: str = "active") -> int:
+        """Store project metadata."""
+        content = f"Project: {name}\nPath: {path}\nDescription: {description}"
+        metadata = {"name": name, "path": path, "status": status}
+        memory_id = self.projects.add(content, metadata)
+        logger.info("Project saved: #%d - %s", memory_id, name)
+        return memory_id
+
+    def add_task(self, goal: str, status: str = "pending", agent_assignments: Optional[List[str]] = None) -> int:
+        """Store task information."""
+        content = f"Goal: {goal}\nStatus: {status}"
+        if agent_assignments:
+            content += f"\nAssigned Agents: {', '.join(agent_assignments)}"
+        metadata = {"goal": goal, "status": status, "agents": agent_assignments or []}
+        memory_id = self.tasks.add(content, metadata)
+        logger.info("Task saved: #%d - %s", memory_id, goal)
+        return memory_id
+
+    def add_preference(self, key: str, value: str, category: str = "general") -> int:
+        """Store a user preference."""
+        content = f"{key}: {value}"
+        metadata = {"key": key, "category": category}
+        memory_id = self.preference_memories.add(content, metadata)
+        logger.info("Preference saved: #%d - %s", memory_id, key)
+        return memory_id
+
+    def add_session_context(self, context: str, context_type: str = "interaction") -> int:
+        """Store session context for current conversation."""
+        metadata = {"type": context_type}
+        memory_id = self.session.add(context, metadata)
+        logger.info("Session context saved: #%d", memory_id)
+        return memory_id
+
+    def get_relevant_context(self, query: str, limit: int = 5) -> List[dict]:
+        """Retrieve relevant memories across all categories using semantic ranking."""
+        all_results = []
+
+        # Search across all memory repositories
+        repositories = [
+            ("user_profile", self.user_profile),
+            ("projects", self.projects),
+            ("tasks", self.tasks),
+            ("preferences", self.preference_memories),
+            ("session", self.session),
+        ]
+
+        for category_name, repo in repositories:
+            results = repo.search_by_content(query, limit=20)
+            for result in results:
+                # Calculate relevance score
+                relevance = repo._calculate_relevance(query, result["content"], result["timestamp"])
+                result["category_name"] = category_name
+                result["relevance_score"] = relevance
+                all_results.append(result)
+
+        # Sort by relevance score (descending) and return top N
+        all_results.sort(key=lambda x: x["relevance_score"], reverse=True)
+        logger.info("Retrieved %d relevant context entries for query: %s", len(all_results[:limit]), query)
+        return all_results[:limit]
+
+    def search_memory(self, category: str, query: str, limit: int = 20) -> List[dict]:
+        """Search memories in a specific category."""
+        category_map = {
+            "user_profile": self.user_profile,
+            "projects": self.projects,
+            "tasks": self.tasks,
+            "preferences": self.preference_memories,
+            "session": self.session,
+        }
+
+        repo = category_map.get(category)
+        if not repo:
+            logger.warning("Unknown memory category: %s", category)
+            return []
+
+        results = repo.search_by_content(query, limit)
+        logger.info("Searched %s for '%s', found %d results", category, query, len(results))
+        return results
+
+    def delete_memory(self, memory_id: int, category: str = "general"):
+        """Delete a specific memory entry from any category."""
+        category_map = {
+            "user_profile": self.user_profile,
+            "projects": self.projects,
+            "tasks": self.tasks,
+            "preferences": self.preference_memories,
+            "session": self.session,
+        }
+
+        repo = category_map.get(category) or self.memories
+        repo.delete(memory_id)
+        logger.info("Deleted memory #%d from category %s", memory_id, category)
+
+    def get_all_by_category(self, category: str, limit: int = 100) -> List[dict]:
+        """Get all memories in a specific category."""
+        category_map = {
+            "user_profile": self.user_profile,
+            "projects": self.projects,
+            "tasks": self.tasks,
+            "preferences": self.preference_memories,
+            "session": self.session,
+        }
+
+        repo = category_map.get(category)
+        if not repo:
+            logger.warning("Unknown memory category: %s", category)
+            return []
+
+        return repo.get_all(limit)

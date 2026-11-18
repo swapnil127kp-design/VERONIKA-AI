@@ -123,6 +123,86 @@ class Database:
                 )
             """)
 
+            # User profile (biography, name, preferences)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_profile (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT DEFAULT 'user_profile',
+                    content TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    relevance_score REAL DEFAULT 1.0,
+                    metadata_json TEXT DEFAULT '{}'
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_profile_timestamp
+                ON user_profile(timestamp DESC)
+            """)
+
+            # Projects (project metadata, description, path)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS project (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT DEFAULT 'project',
+                    content TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    relevance_score REAL DEFAULT 1.0,
+                    metadata_json TEXT DEFAULT '{}'
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_project_timestamp
+                ON project(timestamp DESC)
+            """)
+
+            # Tasks (goal, status, agent assignments)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT DEFAULT 'task',
+                    content TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    relevance_score REAL DEFAULT 1.0,
+                    metadata_json TEXT DEFAULT '{}'
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_task_timestamp
+                ON task(timestamp DESC)
+            """)
+
+            # Preferences (user preferences and settings)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS preference (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT DEFAULT 'preference',
+                    content TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    relevance_score REAL DEFAULT 1.0,
+                    metadata_json TEXT DEFAULT '{}'
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_preference_timestamp
+                ON preference(timestamp DESC)
+            """)
+
+            # Session memory (conversation context, recent interactions)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS session_memory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT DEFAULT 'session',
+                    content TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    relevance_score REAL DEFAULT 1.0,
+                    metadata_json TEXT DEFAULT '{}'
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_session_memory_timestamp
+                ON session_memory(timestamp DESC)
+            """)
+
         logger.info("Database schema initialized at %s", self.db_path)
 
     def close(self):

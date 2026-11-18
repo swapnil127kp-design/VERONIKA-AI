@@ -1,7 +1,7 @@
 # VERONIKA FEATURE COVERAGE MATRIX
 
 **Generated:** 2026-11-05  
-**Last Updated:** 2026-11-05 07:40 UTC  
+**Last Updated:** 2026-11-06 (resume-audit reconciliation — Phase 5 rows corrected against git commits `11f66be`–`1c858d7`, tests verified live)  
 **Total Features:** TBD (awaiting video audit completion)
 
 ---
@@ -26,7 +26,7 @@
 ### Phase 0: Foundation (COMPLETE)
 | Feature | Module | Status | Notes |
 |---------|--------|--------|-------|
-| Multi-provider AI (OpenAI, Gemini, Groq) | `ai/provider_manager.py` | COMPLETE | 280 tests passing |
+| Multi-provider AI (OpenAI, Gemini, Groq) | `ai/provider_manager.py` | COMPLETE | Suite at 311 passed + 2 skipped (2026-11-06) |
 | Personality system (FRIDAY, Companion, ULTRON) | `ai/persona_manager.py` | COMPLETE | Tested |
 | Entity memory system | `ai/entity_manager.py` | COMPLETE | Tested |
 | Model Scout | `ai/model_scout.py` | COMPLETE | Tested |
@@ -36,21 +36,21 @@
 | Authentication | `server/auth.py` | COMPLETE | Tested |
 | ULTRON UI integration | `ui/ultron_bridge.py` | COMPLETE | Three.js bridge ready |
 
-### Phase 5: Voice Engine (IN PROGRESS - 50%)
+### Phase 5: Voice Engine (IMPLEMENTED — Days 1–3 done; Day 4 = manual verification)
 | Feature | Module | Status | Notes |
 |---------|--------|--------|-------|
-| Microphone recording | `voice/microphone.py` | COMPLETE | 4 mics detected |
-| Vosk local STT | `voice/stt_vosk.py` | COMPLETE | 68MB model working |
+| Microphone recording | `voice/microphone.py` | COMPLETE | 4 mics detected; thread-safe stream ownership (crash fixed 2026-11-06) |
+| Vosk local STT | `voice/stt_vosk.py` | COMPLETE | en-US model + hi-IN model (Day 3), `voice/models/` |
 | Cloud STT (Google) | `voice/speech_recognition.py` | COMPLETE | Already working |
-| Dual-engine router | `voice/speech_recognition.py` | COMPLETE | Config-based |
+| Dual-engine router | `voice/speech_recognition.py` | COMPLETE | Config-based + cloud-fallback privacy gate (Day 3) |
 | RMS level metering | `voice/microphone.py` | COMPLETE | Callback ready |
-| Voice tests | `tests/test_voice_recording.py` | COMPLETE | 9 tests passing |
-| UI mic button | TBD | NOT_STARTED | Day 2 |
-| Recording indicator | TBD | NOT_STARTED | Day 2 |
-| Barge-in detection | TBD | NOT_STARTED | Day 2 |
-| Wake word fix | `voice/wake_word.py` | NOT_STARTED | Keyring bug line 59 |
-| Hindi/Hinglish eval | TBD | NOT_STARTED | Day 3 |
-| End-to-end voice conversation | TBD | NOT_STARTED | Day 3 |
+| Voice tests | `tests/test_voice_recording.py` | COMPLETE | Suite total: 311 passed + 2 skipped (verified 2026-11-06) |
+| UI mic button | `ui/chat_panel.py` | COMPLETE | Commit `11f66be` (Day 1 close, Day 2 plan) |
+| Recording indicator | `ui/chat_panel.py`, `ui/main_window.py` | COMPLETE | Level/status signals (commit `11f66be`) |
+| Barge-in detection | `voice/barge_in.py` | COMPLETE | Day 2 commit `3447d3a`, config-gated, default OFF |
+| Wake word fix | `voice/wake_word.py` | COMPLETE | Keyring promotion + loop teardown fixes (commit `3447d3a`) |
+| Hindi/Hinglish STT | `voice/stt_vosk.py` | IMPLEMENTED | Offline hi-IN model verified loading; **listening accuracy = manual, Day 4 (owner)** |
+| End-to-end voice conversation | voice + ai + ui stack | TESTING | Manual end-to-end run pending (owner-assisted, Day 4) |
 
 ---
 

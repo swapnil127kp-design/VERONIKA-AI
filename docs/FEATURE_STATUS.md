@@ -1,6 +1,7 @@
 # VERONIKA — FEATURE STATUS
 
-> Phase 0 deliverable · 2026-11-04 · Verified against actual source. Legend: ✅ Implemented · ⚠️ Partial · ❌ Missing · 🎯 Planned (directive requirement, not yet built).
+> Phase 0 deliverable · 2026-11-04 · Verified against actual source. Legend: ✅ Implemented · ⚠️ Partial · ❌ Missing · 🎯 Planned (directive requirement, not yet built).  
+> Update 2026-11-06: test-suite row refreshed after Phase 5 Days 1–3 (see `docs/CONTINUITY/TESTING_STATUS.md` for the full trail). Section is otherwise era-pinned 2026-11-04; live status lives in `docs/CONTINUITY/`.
 
 ## Existing VERONIKA features
 
@@ -37,7 +38,7 @@
 | Exam predictor | ✅ | `exam_predictor.py` (310 LOC) |
 | Persona/entity modes | ✅ | veronika/friday/ultron + overlays (`entity_manager.py`) — companion overlay non-romantic, girlfriend alias supported |
 | Personality Engine (3 personas) | ✅ | **Phase 3 done**: Companion (non-romantic) replaces Girlfriend (deprecated alias), ULTRON de-toxified (no "kamine"), 5-greeting pools + randomization, startup-greeting toggle, capabilities/shortcuts metadata; mode switch writes only `persona.mode` |
-| Test suite | ✅ | **269 passed, ~10s** (verified 2026-11-04; 205 baseline + 11 security + 21 provider + 32 persona/entity tests); backend-only, no UI/voice/server tests |
+| Test suite | ✅ | **311 passed + 2 skipped in 45.9s** (verified live 2026-11-06; trail 205 → 216 → 237 → 269 → 280 → 289 → 297 → 311; includes voice integration tests) |
 
 ## ULTRON UI features (reference project)
 
