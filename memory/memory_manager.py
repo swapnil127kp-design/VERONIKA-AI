@@ -157,7 +157,7 @@ class MemoryManager:
 
     def add_project(self, name: str, path: str = "", description: str = "", status: str = "active") -> int:
         """Store project metadata."""
-        content = f"Project: {name}\nPath: {path}\nDescription: {description}"
+        content = f"Project: {name}\nName: {name}\nPath: {path}\nDescription: {description}"
         metadata = {"name": name, "path": path, "status": status}
         memory_id = self.projects.add(content, metadata)
         logger.info("Project saved: #%d - %s", memory_id, name)
@@ -165,7 +165,7 @@ class MemoryManager:
 
     def add_task(self, goal: str, status: str = "pending", agent_assignments: Optional[List[str]] = None) -> int:
         """Store task information."""
-        content = f"Goal: {goal}\nStatus: {status}"
+        content = f"Task: {goal}\nGoal: {goal}\nStatus: {status}"
         if agent_assignments:
             content += f"\nAssigned Agents: {', '.join(agent_assignments)}"
         metadata = {"goal": goal, "status": status, "agents": agent_assignments or []}

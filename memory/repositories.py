@@ -270,11 +270,20 @@ class CategoryMemoryRepository:
             return [dict(row) for row in c.fetchall()]
 
     def search_by_content(self, query: str, limit: int = 20) -> List[dict]:
-        """Full-text search in content field."""
+        """Full-text search in content field - matches any word in the query."""
+        # Split query into words and search for any match
+        words = query.lower().split()
+        if not words:
+            return []
+
+        # Build a WHERE clause that matches any word
+        where_conditions = " OR ".join([f"content LIKE ?" for _ in words])
+        like_patterns = [f"%{word}%" for word in words]
+
         with self.db.get_cursor() as c:
             c.execute(
-                f"SELECT * FROM {self.table_name} WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?",
-                (f"%{query}%", limit),
+                f"SELECT * FROM {self.table_name} WHERE {where_conditions} ORDER BY timestamp DESC LIMIT ?",
+                (*like_patterns, limit),
             )
             return [dict(row) for row in c.fetchall()]
 
